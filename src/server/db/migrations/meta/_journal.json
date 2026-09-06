@@ -36,6 +36,13 @@
       "when": 1788735806478,
       "tag": "0004_config_versions_spec",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788737000000,
+      "tag": "0005_assertions_immutability",
+      "breakpoints": true
     }
   ]
 }

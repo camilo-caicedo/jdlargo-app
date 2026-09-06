@@ -85,3 +85,26 @@ export const rolePermissions = pgTable('role_permissions', {
   uniqueIndex('role_permissions_unique').on(t.roleId, t.permissionKey),
 ]).enableRLS();
 
+// assertions — afirmaciones con procedencia inmutables (ADR-0005, HU-005)
+export const assertions = pgTable('assertions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull(),
+  partyId: uuid('party_id').notNull(),
+  configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  field: text('field').notNull(),
+  value: jsonb('value').notNull(),
+  origin: text('origin', { enum: ['declared', 'extracted', 'verified', 'evaluated'] }).notNull(),
+  producedBy: uuid('produced_by').notNull().references(() => users.id),
+  producedAt: timestamp('produced_at', { withTimezone: true }).defaultNow().notNull(),
+  evidenceId: text('evidence_id'),
+  confidence: text('confidence'),
+  aiModelMetadata: jsonb('ai_model_metadata'),
+  status: text('status', { enum: ['active', 'discarded'] }).notNull().default('active'),
+  resolutionNote: text('resolution_note'),
+  resolvedBy: uuid('resolved_by').references(() => users.id),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}).enableRLS();
+
+
