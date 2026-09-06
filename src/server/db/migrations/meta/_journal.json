@@ -43,6 +43,13 @@
       "when": 1788737000000,
       "tag": "0005_assertions_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788738000000,
+      "tag": "0006_audit_log_immutability",
+      "breakpoints": true
     }
   ]
 }

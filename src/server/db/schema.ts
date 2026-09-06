@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, jsonb, uniqueIndex, boolean } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // users — perfil, vive por encima de las organizaciones
@@ -32,15 +32,28 @@ export const memberships = pgTable('memberships', {
   uniqueIndex('memberships_active_unique').on(t.organizationId, t.userId).where(sql`status = 'active'`),
 ]).enableRLS();
 
-// audit_log — mínima, HU-006 la extiende
+// audit_log — bitácora inmutable transversal (ADR-0007, HU-006)
 export const auditLog = pgTable('audit_log', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   actorUserId: uuid('actor_user_id').references(() => users.id),
+  actorType: text('actor_type', { enum: ['user', 'system', 'counterparty'] }).notNull().default('user'),
+  actorDetails: jsonb('actor_details'),
   action: text('action').notNull(),
+  entity: text('entity'),
+  entityId: text('entity_id'),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
+  requestOrigin: jsonb('request_origin'),
+  previousValue: jsonb('previous_value'),
+  newValue: jsonb('new_value'),
+  reason: text('reason'),
+  source: text('source'),
+  automatic: boolean('automatic').notNull().default(false),
+  aiModel: jsonb('ai_model'),
+  configurationVersionId: uuid('configuration_version_id').references(() => configurationVersions.id),
+  eventHash: text('event_hash'),
   metadata: jsonb('metadata'),
   origin: jsonb('origin'),
-  occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS();
 
 // configuration_versions — contenedor inmutable de versiones de configuración (ADR-0004, HU-004)
