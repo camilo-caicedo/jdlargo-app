@@ -15,6 +15,13 @@
       "when": 1788730968685,
       "tag": "0001_functions",
       "breakpoints": false
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788730968686,
+      "tag": "0002_tenant_isolation",
+      "breakpoints": false
     }
   ]
 }

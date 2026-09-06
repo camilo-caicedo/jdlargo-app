@@ -1,6 +1,14 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns';
+
+try {
+  dns.setDefaultResultOrder('ipv4first');
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch {
+  // ignore
+}
 
 // Load .env.local manually if present
 const envPath = path.resolve(__dirname, '.env.local');
