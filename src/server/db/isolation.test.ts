@@ -40,13 +40,18 @@ async function createTestAuthUser(email: string, name: string): Promise<string> 
 
 async function cleanupTestData() {
   await new Promise((r) => setTimeout(r, 100));
+  await adminSql`SET app.allow_config_cleanup = 'true'`;
   await adminSql`DELETE FROM public.audit_log`;
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`DELETE FROM public.memberships`;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
+  await adminSql`DELETE FROM public.role_permissions`;
+  await adminSql`DELETE FROM public.roles`;
+  await adminSql`DELETE FROM public.configuration_versions`;
   await adminSql`DELETE FROM public.organizations`;
   await adminSql`DELETE FROM public.users`;
   await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu002.com'`;
+  await adminSql`RESET app.allow_config_cleanup`;
 }
 
 describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () => {

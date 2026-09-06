@@ -24,7 +24,7 @@ export const memberships = pgTable('memberships', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   userId: uuid('user_id').notNull().references(() => users.id),
-  role: text('role', { enum: ['admin', 'compliance_analyst', 'auditor'] }).notNull(),
+  role: text('role').notNull(),
   status: text('status', { enum: ['active', 'revoked'] }).notNull().default('active'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -42,3 +42,44 @@ export const auditLog = pgTable('audit_log', {
   origin: jsonb('origin'),
   occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS();
+
+// configuration_versions — contenedor inmutable de versiones de configuración (ADR-0004, HU-004)
+export const configurationVersions = pgTable('configuration_versions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  versionNumber: text('version_number').notNull(), // string or integer represented as text/num
+  status: text('status', { enum: ['draft', 'published', 'replaced'] }).notNull().default('draft'),
+  effectiveFrom: timestamp('effective_from', { withTimezone: true }).defaultNow().notNull(),
+  publishedBy: uuid('published_by').references(() => users.id),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  reason: text('reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('config_versions_org_num_unique').on(t.organizationId, t.versionNumber),
+]).enableRLS();
+
+// roles — configuración de roles de la organización por versión (ADR-0004, HU-003)
+export const roles = pgTable('roles', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  name: text('name').notNull(),
+  code: text('code').notNull(),
+  description: text('description'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('roles_org_version_code_unique').on(t.organizationId, t.configurationVersionId, t.code),
+]).enableRLS();
+
+// role_permissions — asignación de permisos por rol en cada versión (ADR-0004, HU-003)
+export const rolePermissions = pgTable('role_permissions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  roleId: uuid('role_id').notNull().references(() => roles.id),
+  permissionKey: text('permission_key').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('role_permissions_unique').on(t.roleId, t.permissionKey),
+]).enableRLS();
+

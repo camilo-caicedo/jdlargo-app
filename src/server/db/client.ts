@@ -17,6 +17,7 @@ export const sqlClient = postgres(connectionString || '', {
 export const db = drizzle(sqlClient, { schema });
 
 export type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type DrizzleClient = typeof db | DatabaseTransaction;
 
 export interface TenantContext {
   userId: string;

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const roleSchema = z.enum(['admin', 'compliance_analyst', 'auditor']);
+export const roleSchema = z.string().min(1, 'El rol no puede estar vacío');
 
 export const createOrganizationSchema = z.object({
   name: z.string().min(1, 'El nombre de la organización es obligatorio'),

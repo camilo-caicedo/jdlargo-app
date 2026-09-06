@@ -1,4 +1,12 @@
-export type Role = 'admin' | 'compliance_analyst' | 'auditor';
+export type BaseRole =
+  | 'admin'
+  | 'compliance_officer'
+  | 'compliance_analyst'
+  | 'reviewer'
+  | 'auditor'
+  | 'operational_user';
+
+export type Role = BaseRole | (string & {});
 export type OrganizationStatus = 'active' | 'suspended';
 export type MembershipStatus = 'active' | 'revoked';
 
