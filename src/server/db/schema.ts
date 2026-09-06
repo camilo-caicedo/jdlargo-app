@@ -49,6 +49,8 @@ export const configurationVersions = pgTable('configuration_versions', {
   organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   versionNumber: text('version_number').notNull(), // string or integer represented as text/num
   status: text('status', { enum: ['draft', 'published', 'replaced'] }).notNull().default('draft'),
+  standard: text('standard').default('SARLAFT'),
+  referenceRegulation: text('reference_regulation'),
   effectiveFrom: timestamp('effective_from', { withTimezone: true }).defaultNow().notNull(),
   publishedBy: uuid('published_by').references(() => users.id),
   publishedAt: timestamp('published_at', { withTimezone: true }),

@@ -1,5 +1,5 @@
 import { sql, eq, and } from 'drizzle-orm';
-import { db, DatabaseTransaction, DrizzleClient, TenantContext } from '../db/client';
+import { db, DrizzleClient, TenantContext } from '../db/client';
 import { memberships, roles, rolePermissions } from '../db/schema';
 import type { PermissionKey } from './permissions';
 import { getActiveConfigurationVersion } from './role-config';
@@ -118,7 +118,7 @@ export async function enforceUserPermission(
   context: TenantContext,
   permission: PermissionKey,
   metadata?: Record<string, unknown>,
-  txClient?: DatabaseTransaction,
+  txClient?: DrizzleClient,
 ): Promise<PermissionCheckResult> {
   const result = await checkUserPermission(
     context.userId,
