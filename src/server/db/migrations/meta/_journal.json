@@ -8,6 +8,13 @@
       "when": 1788730968684,
       "tag": "0000_fantastic_thing",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788730968685,
+      "tag": "0001_functions",
+      "breakpoints": false
     }
   ]
 }

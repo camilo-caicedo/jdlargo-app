@@ -2,7 +2,6 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
 import * as schema from './schema';
-import { customLookup } from './dns-helper';
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -13,10 +12,6 @@ if (!connectionString && process.env.NODE_ENV === 'production') {
 // Transaction mode pooler connection for application traffic
 export const sqlClient = postgres(connectionString || '', {
   prepare: false, // Required for transaction mode / pgbouncer
-  // Use custom lookup when standard system DNS fails to resolve Supabase pooler host
-  connection: {
-    lookup: customLookup as unknown as undefined,
-  },
 });
 
 export const db = drizzle(sqlClient, { schema });

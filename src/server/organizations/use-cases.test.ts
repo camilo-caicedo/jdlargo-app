@@ -13,14 +13,10 @@ import {
   revokeMembership,
 } from './use-cases';
 
-import { customLookup } from '../db/dns-helper';
+
 
 const directUrl = process.env.DIRECT_URL;
-const adminSql = postgres(directUrl || '', {
-  connection: {
-    lookup: customLookup as unknown as undefined,
-  },
-});
+const adminSql = postgres(directUrl || '');
 
 // Helpers for test setup
 async function createTestAuthUser(email: string, name: string): Promise<string> {
