@@ -154,7 +154,46 @@ export const requirements = pgTable('requirements', {
     t.type,
     t.key,
   ),
+]).enableRLS();// dossier_states — catálogo cerrado de estados de expedientes (HU-009, global del producto)
+export const dossierStates = pgTable('dossier_states', {
+  key: text('key').primaryKey(),
+  isFinal: boolean('is_final').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}).enableRLS();
+
+// valid_transitions — catálogo cerrado de transiciones de estado permitidas (HU-009, global del producto)
+export const validTransitions = pgTable('valid_transitions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  source: text('source').notNull().references(() => dossierStates.key),
+  target: text('target').notNull().references(() => dossierStates.key),
+  permission: text('permission').notNull(),
+  requiresReason: boolean('requires_reason').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('valid_transitions_source_target_unique').on(t.source, t.target),
 ]).enableRLS();
 
+// dossiers — envase del expediente (HU-009 envase mínimo, decorado en HU-008)
+export const dossiers = pgTable('dossiers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  state: text('state').notNull().default('borrador').references(() => dossierStates.key),
+  configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}).enableRLS();
 
+// dossier_transitions — bitácora de transiciones de expediente (HU-009)
+export const dossierTransitions = pgTable('dossier_transitions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  fromState: text('from_state').notNull().references(() => dossierStates.key),
+  toState: text('to_state').notNull().references(() => dossierStates.key),
+  actorType: text('actor_type', { enum: ['user', 'system', 'counterparty'] }).notNull(),
+  actorId: uuid('actor_id').references(() => users.id),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
+  reason: text('reason'),
+  configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}).enableRLS();
 

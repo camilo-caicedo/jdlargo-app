@@ -9,7 +9,8 @@ export interface DomainTableAudit {
 }
 
 // Users lives globally above tenants (ADR-0001 §10). Organizations represents the tenant itself (ADR-0001 §9).
-export const EXCEPTED_GLOBAL_TABLES = ['users', 'organizations'];
+// dossier_states and valid_transitions are product-level global catalogs (HU-009 / ADR-0004 §6), not per-tenant configuration.
+export const EXCEPTED_GLOBAL_TABLES = ['users', 'organizations', 'dossier_states', 'valid_transitions'];
 
 /**
  * Inspects Postgres metadata catalogs to verify compliance with ADR-0001 and HU-002:

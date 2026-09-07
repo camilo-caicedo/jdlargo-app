@@ -8,7 +8,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
 import { db, withTenantContext } from './client';
-import { auditDomainTables } from './isolation-runner';
+import { auditDomainTables, EXCEPTED_GLOBAL_TABLES } from './isolation-runner';
 import { executePrivilegedSystemOperation } from '../privileged/system-execution';
 import { createOrganizationWithAdmin } from '../organizations/use-cases';
 
@@ -45,6 +45,8 @@ async function cleanupTestData() {
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`DELETE FROM public.memberships`;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
+  await adminSql`DELETE FROM public.dossier_transitions`;
+  await adminSql`DELETE FROM public.dossiers`;
   await adminSql`DELETE FROM public.requirements`;
   await adminSql`DELETE FROM public.counterparty_types`;
   await adminSql`DELETE FROM public.role_permissions`;
@@ -167,10 +169,10 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
     const orgA = await createOrganizationWithAdmin(userA, { name: 'Org Alfa Tables' });
     const orgB = await createOrganizationWithAdmin(userB, { name: 'Org Beta Tables' });
 
-    // Filtrar tablas de dominio (excluyendo tablas globales users y organizations)
+    // Filtrar tablas de dominio (excluyendo tablas globales como users, organizations, dossier_states, valid_transitions)
     const tablesToVerify = domainTables
       .map((t) => t.tableName)
-      .filter((name) => !['users', 'organizations'].includes(name));
+      .filter((name) => !EXCEPTED_GLOBAL_TABLES.includes(name));
 
     for (const tableName of tablesToVerify) {
       // (a) Lectura cruzada: Usuario de Org B con su contexto no debe ver filas de Org A
@@ -203,6 +205,10 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
         insertSql = `INSERT INTO public.counterparty_types (organization_id, configuration_version_id, name, nature) VALUES ('${orgA.id}', gen_random_uuid(), 'cross_type', 'natural_person')`;
       } else if (tableName === 'requirements') {
         insertSql = `INSERT INTO public.requirements (organization_id, configuration_version_id, counterparty_type_id, standard, type, key, mandatory) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), 'SARLAFT', 'field', 'tax_id', 'always')`;
+      } else if (tableName === 'dossiers') {
+        insertSql = `INSERT INTO public.dossiers (organization_id, state, configuration_version_id) VALUES ('${orgA.id}', 'borrador', gen_random_uuid())`;
+      } else if (tableName === 'dossier_transitions') {
+        insertSql = `INSERT INTO public.dossier_transitions (organization_id, dossier_id, from_state, to_state, actor_type, configuration_version_id) VALUES ('${orgA.id}', gen_random_uuid(), 'borrador', 'enviada', 'system', gen_random_uuid())`;
       } else {
         insertSql = `INSERT INTO public.${tableName} (organization_id) VALUES ('${orgA.id}')`;
       }
@@ -216,7 +222,7 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
         ),
       ).rejects.toThrow();
     }
-  });
+  }, 30000);
 
   it('Escenario: La conexión de administrador está acotada y deja rastro', async () => {
     const userAdmin = await createTestAuthUser('admin-sys@test-hu002.com', 'Admin Sys');

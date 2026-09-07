@@ -78,6 +78,13 @@
       "when": 1788790476159,
       "tag": "0010_flippant_firebird",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788795718758,
+      "tag": "0011_gifted_krista_starr",
+      "breakpoints": true
     }
   ]
 }
