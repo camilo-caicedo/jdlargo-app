@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
-import { db, DrizzleClient } from '../db/client';
+import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
 import { counterpartyTypes, requirements, configurationVersions } from '../db/schema';
 
 // Conjunto cerrado de condición (ADR-0004 §4: campo | operador | valor | combinadores y/o)
@@ -220,7 +220,7 @@ export async function getRequirementsForType(
 export async function assertRequirementMatrixIsComplete(
   organizationId: string,
   configurationVersionId: string,
-  txClient: DrizzleClient,
+  txClient: DatabaseTransaction,
 ): Promise<void> {
   const client = txClient;
 
