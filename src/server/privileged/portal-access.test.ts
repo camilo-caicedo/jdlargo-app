@@ -302,6 +302,18 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
     const reuseVerify = await verifyOtpCode(link.id, sentCode);
     expect(reuseVerify.verified).toBe(false);
     expect(reuseVerify.reason).toContain('ya ha sido utilizado');
+
+    // Confirmar que las operaciones privilegiadas escribieron en public.audit_log
+    const portalAuditLogs = await adminSql<{ action: string; actor_type: string }[]>`
+      SELECT action, actor_type FROM public.audit_log
+      WHERE organization_id = ${org.id}
+        AND action IN ('portal.resolve_access_token', 'portal.request_otp_code', 'portal.verify_otp_code')
+    `;
+    expect(portalAuditLogs.length).toBeGreaterThanOrEqual(3);
+    expect(portalAuditLogs.some((l) => l.action === 'portal.resolve_access_token')).toBe(true);
+    expect(portalAuditLogs.some((l) => l.action === 'portal.request_otp_code')).toBe(true);
+    expect(portalAuditLogs.some((l) => l.action === 'portal.verify_otp_code')).toBe(true);
+    expect(portalAuditLogs.every((l) => l.actor_type === 'system')).toBe(true);
   }, 60000);
 
   it('Escenario: Un enlace revocado o reemplazado no permite acceso y registra el intento', async () => {

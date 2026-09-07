@@ -1,6 +1,6 @@
 import { createHash, randomInt } from 'crypto';
 import { eq, and } from 'drizzle-orm';
-import { executePrivilegedSystemOperation } from './system-execution';
+import { executePrivilegedSystemOperation, adminDb } from './system-execution';
 import { DrizzleClient } from '../db/client';
 import {
   dossierAccessTokens,
@@ -33,56 +33,66 @@ export async function resolveAccessToken(
 ): Promise<ResolveTokenResult> {
   const tokenHash = createHash('sha256').update(rawToken).digest('hex');
 
-  // 1. Initial query using system execution (without orgId yet if not found)
+  // Look up token record using adminDb to resolve its tenant organization
+  const [tokenRecord] = await adminDb
+    .select({
+      id: dossierAccessTokens.id,
+      organizationId: dossierAccessTokens.organizationId,
+      dossierId: dossierAccessTokens.dossierId,
+      state: dossierAccessTokens.state,
+      expiresAt: dossierAccessTokens.expiresAt,
+      requiresSecondFactor: dossierAccessTokens.requiresSecondFactor,
+      recipientEmail: dossierAccessTokens.recipientEmail,
+      internalOwnerId: dossiers.internalOwnerId,
+      ownerName: users.name,
+      ownerEmail: users.email,
+    })
+    .from(dossierAccessTokens)
+    .innerJoin(dossiers, eq(dossierAccessTokens.dossierId, dossiers.id))
+    .leftJoin(users, eq(dossiers.internalOwnerId, users.id))
+    .where(eq(dossierAccessTokens.tokenHash, tokenHash))
+    .limit(1);
+
+  if (!tokenRecord) {
+    console.warn(`[resolveAccessToken] Token not found from IP: ${request.ipAddress}`);
+    return {
+      outcome: 'denied',
+      denialReason: 'not_found',
+    };
+  }
+
+  const ownerContact = tokenRecord.ownerName && tokenRecord.ownerEmail
+    ? { name: tokenRecord.ownerName, email: tokenRecord.ownerEmail }
+    : undefined;
+
+  let denialReason: 'expired' | 'revoked' | 'replaced' | undefined;
+
+  if (tokenRecord.state === 'revoked') {
+    denialReason = 'revoked';
+  } else if (tokenRecord.state === 'replaced') {
+    denialReason = 'replaced';
+  } else if (tokenRecord.expiresAt.getTime() <= Date.now()) {
+    denialReason = 'expired';
+  }
+
+  const outcome: 'granted' | 'denied' = denialReason ? 'denied' : 'granted';
+
   return executePrivilegedSystemOperation(
     {
       action: 'portal.resolve_access_token',
+      organizationId: tokenRecord.organizationId,
+      entity: 'dossier_access_token',
+      entityId: tokenRecord.id,
+      metadata: {
+        dossier_id: tokenRecord.dossierId,
+        outcome,
+        denial_reason: denialReason || null,
+        ip_address: request.ipAddress,
+        user_agent: request.userAgent,
+      },
       description: 'Resolution and validation of external portal access token',
     },
     async (tx) => {
-      const [tokenRecord] = await tx
-        .select({
-          id: dossierAccessTokens.id,
-          organizationId: dossierAccessTokens.organizationId,
-          dossierId: dossierAccessTokens.dossierId,
-          state: dossierAccessTokens.state,
-          expiresAt: dossierAccessTokens.expiresAt,
-          requiresSecondFactor: dossierAccessTokens.requiresSecondFactor,
-          recipientEmail: dossierAccessTokens.recipientEmail,
-          internalOwnerId: dossiers.internalOwnerId,
-          ownerName: users.name,
-          ownerEmail: users.email,
-        })
-        .from(dossierAccessTokens)
-        .innerJoin(dossiers, eq(dossierAccessTokens.dossierId, dossiers.id))
-        .leftJoin(users, eq(dossiers.internalOwnerId, users.id))
-        .where(eq(dossierAccessTokens.tokenHash, tokenHash))
-        .limit(1);
-
-      if (!tokenRecord) {
-        console.warn(`[resolveAccessToken] Token not found from IP: ${request.ipAddress}`);
-        return {
-          outcome: 'denied',
-          denialReason: 'not_found',
-        };
-      }
-
-      const ownerContact = tokenRecord.ownerName && tokenRecord.ownerEmail
-        ? { name: tokenRecord.ownerName, email: tokenRecord.ownerEmail }
-        : undefined;
-
-      let denialReason: 'expired' | 'revoked' | 'replaced' | undefined;
-
-      if (tokenRecord.state === 'revoked') {
-        denialReason = 'revoked';
-      } else if (tokenRecord.state === 'replaced') {
-        denialReason = 'replaced';
-      } else if (tokenRecord.expiresAt.getTime() <= Date.now()) {
-        denialReason = 'expired';
-      }
-
-      const outcome: 'granted' | 'denied' = denialReason ? 'denied' : 'granted';
-
       // Record use in dossier_access_uses
       await tx.insert(dossierAccessUses).values({
         organizationId: tokenRecord.organizationId,
@@ -113,34 +123,40 @@ export async function resolveAccessToken(
  * Uses recipientEmail from dossierAccessTokens.
  */
 export async function requestOtpCode(accessTokenId: string): Promise<void> {
+  const [tokenRecord] = await adminDb
+    .select({
+      id: dossierAccessTokens.id,
+      organizationId: dossierAccessTokens.organizationId,
+      dossierId: dossierAccessTokens.dossierId,
+      recipientEmail: dossierAccessTokens.recipientEmail,
+      dossierCode: dossiers.code,
+    })
+    .from(dossierAccessTokens)
+    .innerJoin(dossiers, eq(dossierAccessTokens.dossierId, dossiers.id))
+    .where(eq(dossierAccessTokens.id, accessTokenId))
+    .limit(1);
+
+  if (!tokenRecord) {
+    throw new Error('Enlace de acceso no encontrado');
+  }
+
+  const rawCode = randomInt(100000, 999999).toString();
+  const codeHash = createHash('sha256').update(rawCode).digest('hex');
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins expiry
+
   const emailToSend = await executePrivilegedSystemOperation(
     {
       action: 'portal.request_otp_code',
+      organizationId: tokenRecord.organizationId,
+      entity: 'dossier_access_token',
+      entityId: tokenRecord.id,
+      metadata: {
+        dossier_id: tokenRecord.dossierId,
+        recipient_email: tokenRecord.recipientEmail,
+      },
       description: 'Generate and record 6-digit OTP code for portal access',
     },
     async (tx) => {
-      const [tokenRecord] = await tx
-        .select({
-          id: dossierAccessTokens.id,
-          organizationId: dossierAccessTokens.organizationId,
-          dossierId: dossierAccessTokens.dossierId,
-          recipientEmail: dossierAccessTokens.recipientEmail,
-          dossierCode: dossiers.code,
-        })
-        .from(dossierAccessTokens)
-        .innerJoin(dossiers, eq(dossierAccessTokens.dossierId, dossiers.id))
-        .where(eq(dossierAccessTokens.id, accessTokenId))
-        .limit(1);
-
-      if (!tokenRecord) {
-        throw new Error('Enlace de acceso no encontrado');
-      }
-
-      // Generate 6 digit numeric code
-      const rawCode = randomInt(100000, 999999).toString();
-      const codeHash = createHash('sha256').update(rawCode).digest('hex');
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins expiry
-
       await tx.insert(dossierAccessOtpCodes).values({
         organizationId: tokenRecord.organizationId,
         dossierId: tokenRecord.dossierId,
@@ -177,9 +193,29 @@ export async function verifyOtpCode(
 ): Promise<{ verified: boolean; reason?: string }> {
   const codeHash = createHash('sha256').update(code.trim()).digest('hex');
 
+  const [tokenRecord] = await adminDb
+    .select({
+      id: dossierAccessTokens.id,
+      organizationId: dossierAccessTokens.organizationId,
+      dossierId: dossierAccessTokens.dossierId,
+    })
+    .from(dossierAccessTokens)
+    .where(eq(dossierAccessTokens.id, accessTokenId))
+    .limit(1);
+
+  if (!tokenRecord) {
+    return { verified: false, reason: 'Enlace de acceso no encontrado' };
+  }
+
   return executePrivilegedSystemOperation(
     {
       action: 'portal.verify_otp_code',
+      organizationId: tokenRecord.organizationId,
+      entity: 'dossier_access_token',
+      entityId: tokenRecord.id,
+      metadata: {
+        dossier_id: tokenRecord.dossierId,
+      },
       description: 'Verification of OTP code for portal access',
     },
     async (tx) => {
@@ -208,12 +244,18 @@ export async function verifyOtpCode(
       }
 
       if (otpRecord.codeHash !== codeHash) {
+        const nextAttempts = otpRecord.attempts + 1;
         await tx
           .update(dossierAccessOtpCodes)
-          .set({ attempts: otpRecord.attempts + 1 })
+          .set({ attempts: nextAttempts })
           .where(eq(dossierAccessOtpCodes.id, otpRecord.id));
 
-        return { verified: false, reason: 'Código incorrecto' };
+        return {
+          verified: false,
+          reason: nextAttempts >= 5
+            ? 'Demasiados intentos fallidos. Solicite un nuevo código.'
+            : 'Código incorrecto',
+        };
       }
 
       // Success: mark consumed
