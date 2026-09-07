@@ -74,3 +74,25 @@ Supabase Auth.
   para que la contraparte sepa a quién contactar — nunca errores técnicos crudos.
 - **Temas:** compatibilidad con tema claro y oscuro desde el día uno con los mismos tokens zinc/slate.
 
+## Login y selección de organización
+
+Superficie de acceso para usuarios internos (analistas, oficiales de cumplimiento, administradores) (HU-055).
+Comparte la misma familia visual que el Portal de la contraparte (tarjeta única, centrada, sin chrome ni navegación de app completa alrededor).
+
+- **Layout:** tarjeta única y sobria, centrada horizontal y verticalmente en el viewport (`min-h-screen`, `max-w-md`), con borde sutil y fondo neutral.
+- **Formulario de login (`/login`):**
+  - Dos campos estándar (`Email` y `Contraseña`) con `Label` accesible y validación de cliente.
+  - Botón primario de envío completo ("Iniciar sesión") con feedback de carga instantáneo (`useActionState` de React 19) para prevenir dobles envíos.
+  - Errores de credenciales inválidas presentados en una alerta destructiva sobria con mensaje genérico de seguridad ("Correo o contraseña incorrectos.").
+- **Selector de organización (`/login/organizacion`):**
+  - Lista vertical de organizaciones a las que pertenece el usuario.
+  - Cada organización se representa en una tarjeta clickeable (`Card` interactiva con hover suave y chevron) que actúa como botón de selección directa.
+  - `loading.tsx` presenta un esqueleto con `Skeleton` de 2-3 tarjetas para evitar saltos visuales durante la resolución de membresías.
+  - Si el usuario no cuenta con membresías activas, mensaje explicativo y botón para volver a iniciar sesión o contactar al administrador.
+- **Shell autenticado mínimo (`/app/[organizationId]`):**
+  - Encabezado superior austero de una sola línea (borde inferior 1px, fondo de superficie):
+    - Identificador y nombre de la organización activa a la izquierda.
+    - Botón secundario o de enlace sutil "Cerrar sesión" alineado a la derecha.
+  - Sin sidebar, buscador ni menús complejos hasta la especificación de la historia del Shell general del producto.
+
+

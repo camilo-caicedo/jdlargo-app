@@ -172,3 +172,20 @@ export async function revokeMembership(
     }
   });
 }
+
+export interface ActiveMembershipSummary {
+  organizationId: string;
+  organizationName: string;
+}
+
+/**
+ * Lists active organizations for the authenticated user using withUserContext.
+ * Doesn't require an active tenant selection yet.
+ */
+export async function listActiveMembershipsForUser(
+  userId: string,
+): Promise<ActiveMembershipSummary[]> {
+  return withUserContext(userId, async (tx) => {
+    return organizationsRepository.listActiveMembershipsForUser(tx, userId);
+  });
+}

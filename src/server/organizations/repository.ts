@@ -115,4 +115,21 @@ export const organizationsRepository = {
       .where(eq(dbSchema.auditLog.organizationId, organizationId))
       .orderBy(desc(dbSchema.auditLog.occurredAt));
   },
+
+  async listActiveMembershipsForUser(tx: Tx, userId: string) {
+    return tx
+      .select({
+        organizationId: dbSchema.memberships.organizationId,
+        organizationName: dbSchema.organizations.name,
+      })
+      .from(dbSchema.memberships)
+      .innerJoin(dbSchema.organizations, eq(dbSchema.memberships.organizationId, dbSchema.organizations.id))
+      .where(
+        and(
+          eq(dbSchema.memberships.userId, userId),
+          eq(dbSchema.memberships.status, 'active'),
+          eq(dbSchema.organizations.status, 'active'),
+        ),
+      );
+  },
 };

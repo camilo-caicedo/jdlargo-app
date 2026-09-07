@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
+import { createServerClient } from '@supabase/ssr';
 
+// --- Rate Limiter for /portal/* (HU-010) ---
 const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
 const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-// Initialize Ratelimit only if Upstash credentials exist
 let ratelimit: Ratelimit | null = null;
 
 if (redisUrl && redisToken) {
@@ -28,51 +29,91 @@ if (redisUrl && redisToken) {
 }
 
 export async function middleware(request: NextRequest) {
-  // Only apply to portal routes
-  if (!request.nextUrl.pathname.startsWith('/portal')) {
+  // Block 1: Portal Rate Limiting (HU-010)
+  if (request.nextUrl.pathname.startsWith('/portal')) {
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+      request.headers.get('x-real-ip') ||
+      '127.0.0.1';
+
+    if (ratelimit) {
+      try {
+        const { success, limit, reset, remaining } = await ratelimit.limit(ip);
+
+        if (!success) {
+          console.warn(
+            `[Portal RateLimit Exceeded] IP: ${ip}, Path: ${request.nextUrl.pathname}, Time: ${new Date().toISOString()}`,
+          );
+
+          return new NextResponse(
+            JSON.stringify({
+              error: 'Demasiadas solicitudes. Por favor intente más tarde.',
+              limit,
+              remaining,
+              reset,
+            }),
+            {
+              status: 429,
+              headers: {
+                'Content-Type': 'application/json',
+                'Retry-After': Math.ceil((reset - Date.now()) / 1000).toString(),
+              },
+            },
+          );
+        }
+      } catch (err) {
+        console.warn('[middleware] Ratelimit check error:', err);
+      }
+    }
+
     return NextResponse.next();
   }
 
-  // Determine client IP
-  const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-    request.headers.get('x-real-ip') ||
-    '127.0.0.1';
+  // Block 2: Supabase Session Refresh (HU-055)
+  // Refreshes the auth token via cookies on non-portal app & auth routes
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  });
 
-  if (ratelimit) {
-    try {
-      const { success, limit, reset, remaining } = await ratelimit.limit(ip);
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-      if (!success) {
-        console.warn(
-          `[Portal RateLimit Exceeded] IP: ${ip}, Path: ${request.nextUrl.pathname}, Time: ${new Date().toISOString()}`,
-        );
+  if (supabaseUrl && supabaseKey) {
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({
+            request,
+          });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options),
+          );
+        },
+      },
+    });
 
-        return new NextResponse(
-          JSON.stringify({
-            error: 'Demasiadas solicitudes. Por favor intente más tarde.',
-            limit,
-            remaining,
-            reset,
-          }),
-          {
-            status: 429,
-            headers: {
-              'Content-Type': 'application/json',
-              'Retry-After': Math.ceil((reset - Date.now()) / 1000).toString(),
-            },
-          },
-        );
-      }
-    } catch (err) {
-      console.warn('[middleware] Ratelimit check error:', err);
-      // Fail-open for application access if rate limiter errors
-    }
+    // Refresh auth token by reading user session
+    await supabase.auth.getUser();
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {
-  matcher: ['/portal/:path*'],
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - Images, svgs, etc.
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };
