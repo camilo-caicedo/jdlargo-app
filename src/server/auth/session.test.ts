@@ -16,6 +16,8 @@ import { resolvePostLoginDestination } from './session';
 const directUrl = process.env.DIRECT_URL;
 const adminSql = postgres(directUrl || '');
 
+const TEST_ORG_NAMES = ['Test Alfa Ficticia HU055 S.A.S.', 'Test Beta Ficticia HU055 S.A.S.'];
+
 async function createTestAuthUser(email: string, name: string): Promise<string> {
   const res = await adminSql`
     INSERT INTO auth.users (
@@ -41,14 +43,43 @@ async function createTestAuthUser(email: string, name: string): Promise<string> 
 
 async function cleanupTestData() {
   await adminSql`SET app.allow_config_cleanup = 'true'`;
-  await adminSql`DELETE FROM public.audit_log WHERE actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu055.com')`;
+  // 1. Audit log
+  await adminSql`
+    DELETE FROM public.audit_log
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu055.com')
+  `;
+
+  // 2. Memberships: delete by organization_id first, regardless of user
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.memberships WHERE user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu055.com')`;
+  await adminSql`
+    DELETE FROM public.memberships
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu055.com')
+  `;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.role_permissions WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ('Alfa Ficticia S.A.S.', 'Beta Ficticia S.A.S.'))`;
-  await adminSql`DELETE FROM public.roles WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ('Alfa Ficticia S.A.S.', 'Beta Ficticia S.A.S.'))`;
-  await adminSql`DELETE FROM public.configuration_versions WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ('Alfa Ficticia S.A.S.', 'Beta Ficticia S.A.S.'))`;
-  await adminSql`DELETE FROM public.organizations WHERE name IN ('Alfa Ficticia S.A.S.', 'Beta Ficticia S.A.S.')`;
+
+  // 3. Organization children (roles, config versions)
+  await adminSql`
+    DELETE FROM public.role_permissions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.roles
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.configuration_versions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+
+  // 4. Organizations
+  await adminSql`
+    DELETE FROM public.organizations
+    WHERE name IN ${adminSql(TEST_ORG_NAMES)}
+  `;
+
+  // 5. Users
   await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu055.com'`;
   await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu055.com'`;
   await adminSql`RESET app.allow_config_cleanup`;
@@ -73,7 +104,7 @@ describe('HU-055: Auth Session & Membership Resolution', () => {
     const orgA = await createOrganizationWithAdmin(
       userSingleOrgId,
       {
-        name: 'Alfa Ficticia S.A.S.',
+        name: TEST_ORG_NAMES[0],
         taxId: '900111222-1',
       },
     );
@@ -83,7 +114,7 @@ describe('HU-055: Auth Session & Membership Resolution', () => {
     const orgB = await createOrganizationWithAdmin(
       userMultiOrgId,
       {
-        name: 'Beta Ficticia S.A.S.',
+        name: TEST_ORG_NAMES[1],
         taxId: '900333444-2',
       },
     );
@@ -116,7 +147,7 @@ describe('HU-055: Auth Session & Membership Resolution', () => {
     const memberships = await listActiveMembershipsForUser(userSingleOrgId);
     expect(memberships.length).toBe(1);
     expect(memberships[0].organizationId).toBe(orgAId);
-    expect(memberships[0].organizationName).toBe('Alfa Ficticia S.A.S.');
+    expect(memberships[0].organizationName).toBe(TEST_ORG_NAMES[0]);
   });
 
   it('resolvePostLoginDestination returns single_org with organizationId for single org user', async () => {
