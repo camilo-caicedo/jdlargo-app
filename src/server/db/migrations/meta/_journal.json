@@ -64,6 +64,13 @@
       "when": 1788740000000,
       "tag": "0008_restrict_cleanup_bypass",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788741000000,
+      "tag": "0009_fix_cleanup_bypass_current_user",
+      "breakpoints": true
     }
   ]
 }

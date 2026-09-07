@@ -38,19 +38,21 @@ async function createTestAuthUser(email: string, name: string): Promise<string> 
 
 async function cleanupTestData() {
   await new Promise((r) => setTimeout(r, 100));
-  await adminSql`SET app.allow_config_cleanup = 'true'`;
-  await adminSql`DELETE FROM public.audit_log`;
-  await adminSql`DELETE FROM public.assertions`;
-  await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.memberships`;
-  await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.role_permissions`;
-  await adminSql`DELETE FROM public.roles`;
-  await adminSql`DELETE FROM public.configuration_versions`;
-  await adminSql`DELETE FROM public.organizations`;
-  await adminSql`DELETE FROM public.users`;
-  await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu006.com'`;
-  await adminSql`RESET app.allow_config_cleanup`;
+  await adminSql.begin(async (tx) => {
+    await tx`SET app.allow_config_cleanup = 'true'`;
+    await tx`DELETE FROM public.audit_log`;
+    await tx`DELETE FROM public.assertions`;
+    await tx`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
+    await tx`DELETE FROM public.memberships`;
+    await tx`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
+    await tx`DELETE FROM public.role_permissions`;
+    await tx`DELETE FROM public.roles`;
+    await tx`DELETE FROM public.configuration_versions`;
+    await tx`DELETE FROM public.organizations`;
+    await tx`DELETE FROM public.users`;
+    await tx`DELETE FROM auth.users WHERE email LIKE '%@test-hu006.com'`;
+    await tx`RESET app.allow_config_cleanup`;
+  });
 }
 
 describe('HU-006: Bitácora inmutable transversal', () => {
