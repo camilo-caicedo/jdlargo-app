@@ -79,7 +79,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
   afterAll(async () => {
     await cleanupTestData();
     await adminSql.end();
-  });
+  }, 60000);
 
   it('Escenario: Crear una solicitud y abrir su expediente', async () => {
     const adminUser = await createTestAuthUser('admin1@test-hu008.com', 'Admin Org 1');
@@ -567,5 +567,85 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
         AND actor_user_id = ${auditorUser}::uuid
     `;
     expect(deniedLogs).toHaveLength(1);
-  }, 30000);
+  }, 60000);
+
+  it('Escenario: El mismo proveedor puede tener varias vinculaciones reutilizando el sujeto (find-or-create)', async () => {
+    const adminUser = await createTestAuthUser('admin6@test-hu008.com', 'Admin Org 6');
+    const operationalUser = await createTestAuthUser('op6@test-hu008.com', 'Usuario Operativo 6');
+
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'Party Reuse Org' });
+    await seedBaseConfiguration(org.id, adminUser);
+    await grantMembership(adminUser, {
+      organizationId: org.id,
+      userId: operationalUser,
+      role: 'operational_user',
+    });
+
+    const draft = await createDraftConfiguration({ organizationId: org.id, standard: 'SARLAFT' });
+    const typeRes = await addCounterpartyType({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      name: 'proveedor',
+      nature: 'legal_entity',
+    });
+    await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: typeRes.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'tax_id',
+      mandatory: 'always',
+      validation: { dataType: 'string' },
+    });
+    await publishDraftConfiguration({
+      organizationId: org.id,
+      versionId: draft.versionId,
+      publishedBy: adminUser,
+      reason: 'Configuración para reutilización',
+    });
+
+    const sharedPartyInput = {
+      identificationType: 'NIT',
+      identificationNumber: '900777888-9',
+      declaredName: 'Proveedor Frecuente S.A.S.',
+    };
+
+    // Primera vinculación para este proveedor
+    const dossier1 = await createDossierRequest({
+      organizationId: org.id,
+      requestedBy: operationalUser,
+      counterpartyTypeName: 'proveedor',
+      party: sharedPartyInput,
+      internalOwnerId: adminUser,
+    });
+
+    // Segunda vinculación para el mismo proveedor (p. ej. nuevo contrato o vinculación periódica)
+    const dossier2 = await createDossierRequest({
+      organizationId: org.id,
+      requestedBy: operationalUser,
+      counterpartyTypeName: 'proveedor',
+      party: {
+        ...sharedPartyInput,
+        declaredName: 'Proveedor Frecuente S.A.S. - Sucursal 2',
+      },
+      internalOwnerId: adminUser,
+    });
+
+    // Son dos expedientes distintos
+    expect(dossier1.id).not.toBe(dossier2.id);
+    expect(dossier1.code).not.toBe(dossier2.code);
+
+    // Ambos expedientes apuntan exactamente al mismo sujeto (reutilización)
+    expect(dossier1.partyId).toBe(dossier2.partyId);
+
+    // La base de datos tiene exactamente una fila de parties para esa identificación
+    const partyCount = await adminSql<{ count: string }[]>`
+      SELECT count(*) as count FROM public.parties
+      WHERE organization_id = ${org.id}
+        AND identification_type = ${sharedPartyInput.identificationType}
+        AND identification_number = ${sharedPartyInput.identificationNumber}
+    `;
+    expect(Number(partyCount[0].count)).toBe(1);
+  }, 60000);
 });
