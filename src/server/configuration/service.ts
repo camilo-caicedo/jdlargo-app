@@ -4,6 +4,7 @@ import { configurationVersions, roles, rolePermissions } from '../db/schema';
 import type { PermissionKey } from '../auth/permissions';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
+import { assertRequirementMatrixIsComplete } from './requirement-matrix';
 
 export interface DraftRoleInput {
   code: string;
@@ -273,6 +274,9 @@ export async function publishDraftConfiguration(
     if (draft.status === 'published' || draft.status === 'replaced') {
       throw new Error('La versión ya fue publicada o reemplazada previamente');
     }
+
+    // Validate completeness of requirement matrix for any declared counterparty types (HU-007)
+    await assertRequirementMatrixIsComplete(input.organizationId, input.versionId, tx);
 
     const effectiveDate = input.effectiveFrom || new Date();
 

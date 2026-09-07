@@ -45,6 +45,8 @@ async function cleanupTestData() {
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`DELETE FROM public.memberships`;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
+  await adminSql`DELETE FROM public.requirements`;
+  await adminSql`DELETE FROM public.counterparty_types`;
   await adminSql`DELETE FROM public.role_permissions`;
   await adminSql`DELETE FROM public.roles`;
   await adminSql`DELETE FROM public.configuration_versions`;
@@ -197,6 +199,10 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
         insertSql = `INSERT INTO public.role_permissions (organization_id, configuration_version_id, role_id, permission_key) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), 'dossier:view')`;
       } else if (tableName === 'assertions') {
         insertSql = `INSERT INTO public.assertions (organization_id, dossier_id, party_id, configuration_version_id, field, value, origin, produced_by) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'nit', '{"nit":"123"}'::jsonb, 'declared', '${userB}')`;
+      } else if (tableName === 'counterparty_types') {
+        insertSql = `INSERT INTO public.counterparty_types (organization_id, configuration_version_id, name, nature) VALUES ('${orgA.id}', gen_random_uuid(), 'cross_type', 'natural_person')`;
+      } else if (tableName === 'requirements') {
+        insertSql = `INSERT INTO public.requirements (organization_id, configuration_version_id, counterparty_type_id, standard, type, key, mandatory) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), 'SARLAFT', 'field', 'tax_id', 'always')`;
       } else {
         insertSql = `INSERT INTO public.${tableName} (organization_id) VALUES ('${orgA.id}')`;
       }

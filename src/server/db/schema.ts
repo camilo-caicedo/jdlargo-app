@@ -120,4 +120,41 @@ export const assertions = pgTable('assertions', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS();
 
+// counterparty_types — tipos de contraparte por versión de configuración (ADR-0004, HU-007)
+export const counterpartyTypes = pgTable('counterparty_types', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  name: text('name').notNull(),
+  nature: text('nature', { enum: ['natural_person', 'legal_entity'] }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('counterparty_types_org_ver_name_unique').on(t.organizationId, t.configurationVersionId, t.name),
+]).enableRLS();
+
+// requirements — matriz de requisitos por estándar y tipo de contraparte (ADR-0004, HU-007)
+export const requirements = pgTable('requirements', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  counterpartyTypeId: uuid('counterparty_type_id').notNull().references(() => counterpartyTypes.id),
+  standard: text('standard').notNull(),
+  type: text('type', { enum: ['field', 'document_type'] }).notNull(),
+  key: text('key').notNull(),
+  mandatory: text('mandatory', { enum: ['always', 'conditional', 'optional'] }).notNull(),
+  condition: jsonb('condition'),
+  validation: jsonb('validation'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('requirements_org_ver_type_std_key_unique').on(
+    t.organizationId,
+    t.configurationVersionId,
+    t.counterpartyTypeId,
+    t.standard,
+    t.type,
+    t.key,
+  ),
+]).enableRLS();
+
+
 
