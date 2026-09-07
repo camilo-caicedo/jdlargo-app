@@ -43,6 +43,9 @@ async function cleanupTestData() {
   await adminSql`SET app.allow_config_cleanup = 'true'`;
   await adminSql`DELETE FROM public.audit_log`;
   await adminSql`DELETE FROM public.assertions`;
+  await adminSql`DELETE FROM public.dossier_transitions`;
+  await adminSql`DELETE FROM public.dossiers`;
+  await adminSql`DELETE FROM public.parties`;
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`DELETE FROM public.memberships`;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
@@ -61,8 +64,8 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
   let adminAlfaId: string;
   let adminBetaId: string;
   let configurationVersionId: string;
-  const dossierId = '00000000-0000-0000-0000-000000000001';
-  const partyId = '00000000-0000-0000-0000-000000000002';
+  let dossierId: string;
+  let partyId: string;
 
   beforeAll(async () => {
     await cleanupTestData();
@@ -76,6 +79,21 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
     adminBetaId = await createTestAuthUser('adminBeta@test-hu005.com', 'Admin Beta');
     orgBeta = await createOrganizationWithAdmin(adminBetaId, { name: 'Beta Ficticia S.A.S.' });
     await seedBaseConfiguration(orgBeta.id, adminBetaId);
+
+    // Create party and dossier for Alfa to satisfy real FK constraints
+    const partyRes = await adminSql<{ id: string }[]>`
+      INSERT INTO public.parties (organization_id, identification_type, identification_number)
+      VALUES (${orgAlfa.id}, 'NIT', '900123456-1')
+      RETURNING id
+    `;
+    partyId = partyRes[0].id;
+
+    const dossierRes = await adminSql<{ id: string }[]>`
+      INSERT INTO public.dossiers (organization_id, state, configuration_version_id, party_id)
+      VALUES (${orgAlfa.id}, 'borrador', ${configurationVersionId}, ${partyId})
+      RETURNING id
+    `;
+    dossierId = dossierRes[0].id;
   }, 30000);
 
   afterAll(async () => {

@@ -46,7 +46,9 @@ async function cleanupTestData() {
   await adminSql`DELETE FROM public.memberships`;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`DELETE FROM public.dossier_transitions`;
+  await adminSql`DELETE FROM public.assertions`;
   await adminSql`DELETE FROM public.dossiers`;
+  await adminSql`DELETE FROM public.parties`;
   await adminSql`DELETE FROM public.requirements`;
   await adminSql`DELETE FROM public.counterparty_types`;
   await adminSql`DELETE FROM public.role_permissions`;
@@ -205,6 +207,8 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
         insertSql = `INSERT INTO public.counterparty_types (organization_id, configuration_version_id, name, nature) VALUES ('${orgA.id}', gen_random_uuid(), 'cross_type', 'natural_person')`;
       } else if (tableName === 'requirements') {
         insertSql = `INSERT INTO public.requirements (organization_id, configuration_version_id, counterparty_type_id, standard, type, key, mandatory) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), 'SARLAFT', 'field', 'tax_id', 'always')`;
+      } else if (tableName === 'parties') {
+        insertSql = `INSERT INTO public.parties (organization_id, identification_type, identification_number) VALUES ('${orgA.id}', 'NIT', '900123456')`;
       } else if (tableName === 'dossiers') {
         insertSql = `INSERT INTO public.dossiers (organization_id, state, configuration_version_id) VALUES ('${orgA.id}', 'borrador', gen_random_uuid())`;
       } else if (tableName === 'dossier_transitions') {

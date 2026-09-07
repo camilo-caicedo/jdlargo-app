@@ -102,8 +102,8 @@ export const rolePermissions = pgTable('role_permissions', {
 export const assertions = pgTable('assertions', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').notNull().references(() => organizations.id),
-  dossierId: uuid('dossier_id').notNull(),
-  partyId: uuid('party_id').notNull(),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  partyId: uuid('party_id').notNull().references(() => parties.id),
   configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
   field: text('field').notNull(),
   value: jsonb('value').notNull(),
@@ -154,7 +154,24 @@ export const requirements = pgTable('requirements', {
     t.type,
     t.key,
   ),
-]).enableRLS();// dossier_states — catálogo cerrado de estados de expedientes (HU-009, global del producto)
+]).enableRLS();
+
+// parties — el sujeto contraparte en la organización cliente (HU-008, §31, §37)
+export const parties = pgTable('parties', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  identificationType: text('identification_type').notNull(),
+  identificationNumber: text('identification_number').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('parties_org_id_type_num_unique').on(
+    t.organizationId,
+    t.identificationType,
+    t.identificationNumber,
+  ),
+]).enableRLS();
+
+// dossier_states — catálogo cerrado de estados de expedientes (HU-009, global del producto)
 export const dossierStates = pgTable('dossier_states', {
   key: text('key').primaryKey(),
   isFinal: boolean('is_final').notNull().default(false),
@@ -177,10 +194,18 @@ export const validTransitions = pgTable('valid_transitions', {
 export const dossiers = pgTable('dossiers', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  code: text('code'),
+  partyId: uuid('party_id').references(() => parties.id),
+  counterpartyTypeId: uuid('counterparty_type_id').references(() => counterpartyTypes.id),
+  standard: text('standard'),
+  internalOwnerId: uuid('internal_owner_id').references(() => users.id),
+  deadline: timestamp('deadline', { withTimezone: true }),
   state: text('state').notNull().default('borrador').references(() => dossierStates.key),
   configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-}).enableRLS();
+}, (t) => [
+  uniqueIndex('dossiers_org_code_unique').on(t.organizationId, t.code),
+]).enableRLS();
 
 // dossier_transitions — bitácora de transiciones de expediente (HU-009)
 export const dossierTransitions = pgTable('dossier_transitions', {
