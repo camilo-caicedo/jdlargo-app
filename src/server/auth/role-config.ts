@@ -1,5 +1,5 @@
 import { eq, and, desc } from 'drizzle-orm';
-import { db, DatabaseTransaction, DrizzleClient } from '../db/client';
+import { db, DatabaseTransaction, DrizzleClient, withTenantContext } from '../db/client';
 import { configurationVersions, roles, rolePermissions } from '../db/schema';
 import type { PermissionKey } from './permissions';
 import { logAuditEvent } from '../audit/service';
@@ -129,7 +129,13 @@ export async function publishConfigurationVersion(
   if (txClient) {
     return execute(txClient);
   }
-  return db.transaction(execute);
+  return withTenantContext(
+    {
+      userId: input.publishedBy,
+      organizationId: input.organizationId,
+    },
+    execute,
+  );
 }
 
 /**

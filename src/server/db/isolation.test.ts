@@ -140,19 +140,76 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
   });
 
   it('Escenario: Prueba de aislamiento obligatoria por tabla', async () => {
-    // Inspecciona catálogo de base de datos Postgres
+    // 1. Inspecciona catálogo de base de datos Postgres
     const { domainTables, violations } = await auditDomainTables(adminSql);
 
-    // Debe auditar las tablas existentes
-    expect(domainTables.length).toBeGreaterThanOrEqual(3);
+    // Debe auditar todas las tablas existentes
+    expect(domainTables.length).toBeGreaterThanOrEqual(5);
     const tableNames = domainTables.map((t) => t.tableName);
     expect(tableNames).toContain('organizations');
     expect(tableNames).toContain('memberships');
     expect(tableNames).toContain('audit_log');
+    expect(tableNames).toContain('configuration_versions');
+    expect(tableNames).toContain('roles');
+    expect(tableNames).toContain('role_permissions');
+    expect(tableNames).toContain('assertions');
     expect(tableNames).toContain('users');
 
-    // Falla automáticamente si alguna tabla de dominio no tiene RLS o carece de organization_id NOT NULL
+    // Falla automáticamente si alguna tabla de dominio no tiene RLS, no tiene FORCE RLS o carece de organization_id NOT NULL
     expect(violations).toEqual([]);
+
+    // 2. Ejecutar prueba obligatoria de lectura y escritura cruzadas real para cada tabla de dominio
+    // (ADR-0001 §10 y HU-002 Criterio Gherkin: "verifica lectura y escritura cruzadas entre dos organizaciones clientes")
+    const userA = await createTestAuthUser('user-table-a@test-hu002.com', 'User A');
+    const userB = await createTestAuthUser('user-table-b@test-hu002.com', 'User B');
+    const orgA = await createOrganizationWithAdmin(userA, { name: 'Org Alfa Tables' });
+    const orgB = await createOrganizationWithAdmin(userB, { name: 'Org Beta Tables' });
+
+    // Filtrar tablas de dominio (excluyendo tablas globales users y organizations)
+    const tablesToVerify = domainTables
+      .map((t) => t.tableName)
+      .filter((name) => !['users', 'organizations'].includes(name));
+
+    for (const tableName of tablesToVerify) {
+      // (a) Lectura cruzada: Usuario de Org B con su contexto no debe ver filas de Org A
+      const crossRead = await withTenantContext(
+        { userId: userB, organizationId: orgB.id },
+        async (tx) => {
+          return tx.execute(
+            sql.raw(`SELECT * FROM public.${tableName} WHERE organization_id = '${orgA.id}'`)
+          );
+        },
+      );
+      expect(crossRead.length).toBe(0);
+
+      // (b) Escritura cruzada: Usuario con contexto de Org B intentando insertar con organization_id de Org A debe fallar
+      // Probamos inserciones con columnas mínimas según tabla
+      let insertSql: string;
+      if (tableName === 'memberships') {
+        insertSql = `INSERT INTO public.memberships (organization_id, user_id, role, status) VALUES ('${orgA.id}', '${userB}', 'compliance_analyst', 'active')`;
+      } else if (tableName === 'audit_log') {
+        insertSql = `INSERT INTO public.audit_log (organization_id, actor_user_id, action, event_hash) VALUES ('${orgA.id}', '${userB}', 'cross.write', 'hash')`;
+      } else if (tableName === 'configuration_versions') {
+        insertSql = `INSERT INTO public.configuration_versions (organization_id, version_number, status) VALUES ('${orgA.id}', '88', 'draft')`;
+      } else if (tableName === 'roles') {
+        insertSql = `INSERT INTO public.roles (organization_id, configuration_version_id, code, name) VALUES ('${orgA.id}', gen_random_uuid(), 'cross_role', 'Rol Cruzado')`;
+      } else if (tableName === 'role_permissions') {
+        insertSql = `INSERT INTO public.role_permissions (organization_id, configuration_version_id, role_id, permission_key) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), 'dossier:view')`;
+      } else if (tableName === 'assertions') {
+        insertSql = `INSERT INTO public.assertions (organization_id, dossier_id, party_id, configuration_version_id, field, value, origin, produced_by) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'nit', '{"nit":"123"}'::jsonb, 'declared', '${userB}')`;
+      } else {
+        insertSql = `INSERT INTO public.${tableName} (organization_id) VALUES ('${orgA.id}')`;
+      }
+
+      await expect(
+        withTenantContext(
+          { userId: userB, organizationId: orgB.id },
+          async (tx) => {
+            return tx.execute(sql.raw(insertSql));
+          },
+        ),
+      ).rejects.toThrow();
+    }
   });
 
   it('Escenario: La conexión de administrador está acotada y deja rastro', async () => {

@@ -57,6 +57,13 @@
       "when": 1788739000000,
       "tag": "0007_audit_and_config_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788740000000,
+      "tag": "0008_restrict_cleanup_bypass",
+      "breakpoints": true
     }
   ]
 }
