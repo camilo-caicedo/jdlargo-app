@@ -1,6 +1,6 @@
-import { sql } from 'drizzle-orm';
 import { adminDb, adminSqlClient } from '../db/admin-client';
 import type { DatabaseTransaction } from '../db/client';
+import { logAuditEvent } from '../audit/service';
 
 export interface PrivilegedOperationOptions {
   action: string;
@@ -23,21 +23,17 @@ export async function executePrivilegedSystemOperation<T>(
 
     // 2. Mandatory audit log entry (ADR-0007, RF-006, HU-002)
     if (options.organizationId) {
-      await tx.execute(sql`
-        INSERT INTO public.audit_log (
-          organization_id,
-          actor_user_id,
-          action,
-          metadata,
-          origin
-        ) VALUES (
-          ${options.organizationId}::uuid,
-          NULL,
-          ${options.action},
-          ${JSON.stringify(options.metadata || {})}::jsonb,
-          ${JSON.stringify({ actor: 'system', description: options.description || 'automated process' })}::jsonb
-        )
-      `);
+      await logAuditEvent(
+        {
+          organizationId: options.organizationId,
+          actorType: 'system',
+          action: options.action,
+          automatic: true,
+          metadata: options.metadata || {},
+          origin: { actor: 'system', description: options.description || 'automated process' },
+        },
+        tx,
+      );
     }
 
     return result;

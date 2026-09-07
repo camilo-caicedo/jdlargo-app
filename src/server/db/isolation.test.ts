@@ -109,6 +109,19 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
         },
       ),
     ).rejects.toThrow();
+
+    // Intento de escribir en tablas gobernadas por current_org_id() (configuration_versions)
+    await expect(
+      withTenantContext(
+        { userId: userAlfa, organizationId: orgAlfa.id },
+        async (tx) => {
+          return tx.execute(
+            sql`INSERT INTO public.configuration_versions (organization_id, version_number, status)
+                VALUES (${orgBeta.id}, '99', 'draft')`
+          );
+        },
+      ),
+    ).rejects.toThrow();
   });
 
   it('Escenario: Sin contexto de usuario no se ve nada', async () => {

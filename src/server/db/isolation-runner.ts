@@ -3,6 +3,7 @@ import postgres from 'postgres';
 export interface DomainTableAudit {
   tableName: string;
   hasRLS: boolean;
+  hasForceRLS: boolean;
   hasOrganizationId: boolean;
   organizationIdNullable: boolean;
 }
@@ -14,20 +15,23 @@ export const EXCEPTED_GLOBAL_TABLES = ['users', 'organizations'];
  * Inspects Postgres metadata catalogs to verify compliance with ADR-0001 and HU-002:
  * Every domain table (except global user accounts) MUST have:
  * 1. Row-Level Security enabled (rowsecurity = true)
- * 2. An organization_id column with NOT NULL constraint
+ * 2. FORCE ROW LEVEL SECURITY enabled (forcerowsecurity = true)
+ * 3. An organization_id column with NOT NULL constraint
  */
 export async function auditDomainTables(sql: postgres.Sql): Promise<{
   domainTables: DomainTableAudit[];
   violations: string[];
 }> {
-  // Query all public tables and their RLS status
+  // Query all public tables, their RLS and FORCE RLS status
   const tables = await sql<{
     table_name: string;
     rowsecurity: boolean;
+    forcerowsecurity: boolean;
   }[]>`
     SELECT 
       c.relname as table_name,
-      c.relrowsecurity as rowsecurity
+      c.relrowsecurity as rowsecurity,
+      c.relforcerowsecurity as forcerowsecurity
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public'
@@ -62,6 +66,7 @@ export async function auditDomainTables(sql: postgres.Sql): Promise<{
     const audit: DomainTableAudit = {
       tableName: table.table_name,
       hasRLS: table.rowsecurity,
+      hasForceRLS: table.forcerowsecurity,
       hasOrganizationId: !!orgIdCol,
       organizationIdNullable: orgIdCol ? orgIdCol.is_nullable === 'YES' : false,
     };
@@ -73,7 +78,12 @@ export async function auditDomainTables(sql: postgres.Sql): Promise<{
       violations.push(`Table '${table.table_name}' does NOT have Row-Level Security (RLS) enabled.`);
     }
 
-    // Rule 2: Every domain table (except global user accounts) must have organization_id NOT NULL
+    // Rule 2: Every domain table must have FORCE ROW LEVEL SECURITY enabled (Fix HU-002 auditoría)
+    if (!isExcepted && !audit.hasForceRLS) {
+      violations.push(`Domain table '${table.table_name}' does NOT have FORCE ROW LEVEL SECURITY enabled.`);
+    }
+
+    // Rule 3: Every domain table (except global user accounts) must have organization_id NOT NULL
     if (!isExcepted) {
       if (!audit.hasOrganizationId) {
         violations.push(`Domain table '${table.table_name}' lacks required 'organization_id' column.`);

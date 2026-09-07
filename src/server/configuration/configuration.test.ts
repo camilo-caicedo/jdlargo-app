@@ -182,10 +182,33 @@ describe('HU-004: Publicación de versiones de configuración inmutables', () =>
 
     // v1 is now replaced
     const v1Rows = await adminSql`
-      SELECT status FROM public.configuration_versions
+      SELECT id, status FROM public.configuration_versions
       WHERE organization_id = ${org3.id}::uuid AND version_number = '1'
     `;
     expect(v1Rows[0].status).toBe('replaced');
+
+    // Fix HU-003 & HU-004 auditoría: verificar que una versión en estado replaced rechaza UPDATE
+    await expect(
+      adminSql`
+        UPDATE public.configuration_versions
+        SET reason = 'INTENTO_REESCRITURA_REPLACED'
+        WHERE id = ${v1Rows[0].id}::uuid
+      `
+    ).rejects.toThrow(/Cannot modify replaced configuration version/);
+
+    // Fix HU-004 auditoría: verificar que publicar con motivo vacío falla
+    const emptyReasonDraft = await createDraftConfiguration({
+      organizationId: org3.id,
+      standard: 'SARLAFT V3 INVALID',
+    });
+    await expect(
+      publishDraftConfiguration({
+        organizationId: org3.id,
+        versionId: emptyReasonDraft.versionId,
+        publishedBy: admin3Id,
+        reason: '   ',
+      })
+    ).rejects.toThrow(/motivo explícito no vacío/);
 
     // Compare diff between v1 and v2
     const diff = await compareConfigurationVersions(org3.id, '1', '2');

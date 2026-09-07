@@ -1,8 +1,9 @@
 import { sql, eq, and, desc, lte } from 'drizzle-orm';
-import { db, DrizzleClient } from '../db/client';
+import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
 import { configurationVersions, roles, rolePermissions } from '../db/schema';
 import type { PermissionKey } from '../auth/permissions';
 import { enforceUserPermission } from '../auth/access-control';
+import { logAuditEvent } from '../audit/service';
 
 export interface DraftRoleInput {
   code: string;
@@ -238,6 +239,11 @@ export async function publishDraftConfiguration(
   input: PublishDraftInput,
   txClient?: DrizzleClient,
 ): Promise<ConfigurationVersionDetail> {
+  // Validate reason is mandatory and non-empty (HU-004)
+  if (!input.reason || input.reason.trim() === '') {
+    throw new Error('La publicación de una versión exige un motivo explícito no vacío');
+  }
+
   // 1. Enforce permission (HU-004 Escenario: Publicar exige el permiso correspondiente)
   await enforceUserPermission(
     {
@@ -249,82 +255,87 @@ export async function publishDraftConfiguration(
     txClient,
   );
 
-  const client = txClient || db;
+  const execute = async (tx: DatabaseTransaction) => {
+    const [draft] = await tx
+      .select()
+      .from(configurationVersions)
+      .where(
+        and(
+          eq(configurationVersions.organizationId, input.organizationId),
+          eq(configurationVersions.id, input.versionId),
+        ),
+      );
 
-  const [draft] = await client
-    .select()
-    .from(configurationVersions)
-    .where(
-      and(
-        eq(configurationVersions.organizationId, input.organizationId),
-        eq(configurationVersions.id, input.versionId),
-      ),
-    );
+    if (!draft) {
+      throw new Error('Versión de configuración no encontrada');
+    }
 
-  if (!draft) {
-    throw new Error('Versión de configuración no encontrada');
-  }
+    if (draft.status === 'published' || draft.status === 'replaced') {
+      throw new Error('La versión ya fue publicada o reemplazada previamente');
+    }
 
-  if (draft.status === 'published' || draft.status === 'replaced') {
-    throw new Error('La versión ya fue publicada o reemplazada previamente');
-  }
+    const effectiveDate = input.effectiveFrom || new Date();
 
-  const effectiveDate = input.effectiveFrom || new Date();
+    // 2. Mark existing published version as 'replaced'
+    const currentPublished = await tx
+      .select()
+      .from(configurationVersions)
+      .where(
+        and(
+          eq(configurationVersions.organizationId, input.organizationId),
+          eq(configurationVersions.status, 'published'),
+        ),
+      );
 
-  // 2. Mark existing published version as 'replaced'
-  const currentPublished = await client
-    .select()
-    .from(configurationVersions)
-    .where(
-      and(
-        eq(configurationVersions.organizationId, input.organizationId),
-        eq(configurationVersions.status, 'published'),
-      ),
-    );
+    for (const prev of currentPublished) {
+      await tx
+        .update(configurationVersions)
+        .set({ status: 'replaced' })
+        .where(eq(configurationVersions.id, prev.id));
+    }
 
-  for (const prev of currentPublished) {
-    await client
+    // 3. Mark target version as 'published'
+    const [published] = await tx
       .update(configurationVersions)
-      .set({ status: 'replaced' })
-      .where(eq(configurationVersions.id, prev.id));
-  }
-
-  // 3. Mark target version as 'published'
-  const [published] = await client
-    .update(configurationVersions)
-    .set({
-      status: 'published',
-      publishedBy: input.publishedBy,
-      publishedAt: new Date(),
-      reason: input.reason,
-      effectiveFrom: effectiveDate,
-    })
-    .where(eq(configurationVersions.id, input.versionId))
-    .returning();
-
-  // 4. Audit trail in audit_log
-  await client.execute(sql`
-    INSERT INTO public.audit_log (
-      organization_id,
-      actor_user_id,
-      action,
-      metadata,
-      origin
-    ) VALUES (
-      ${input.organizationId}::uuid,
-      ${input.publishedBy}::uuid,
-      'configuration.published',
-      ${JSON.stringify({
-        version_id: published.id,
-        version_number: published.versionNumber,
+      .set({
+        status: 'published',
+        publishedBy: input.publishedBy,
+        publishedAt: new Date(),
         reason: input.reason,
-        effective_from: published.effectiveFrom,
-      })}::jsonb,
-      ${JSON.stringify({ actor: 'user', action: 'publishDraftConfiguration' })}::jsonb
-    )
-  `);
+        effectiveFrom: effectiveDate,
+      })
+      .where(eq(configurationVersions.id, input.versionId))
+      .returning();
 
-  return getConfigurationVersionDetail(input.organizationId, published.id, client);
+    // 4. Audit trail via transversal logAuditEvent (ADR-0007, HU-006)
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorUserId: input.publishedBy,
+        action: 'configuration.published',
+        entity: 'configuration_version',
+        entityId: published.id,
+        reason: input.reason,
+        configurationVersionId: published.id,
+        metadata: {
+          version_id: published.id,
+          version_number: published.versionNumber,
+          reason: input.reason,
+          effective_from: published.effectiveFrom,
+        },
+        origin: { actor: 'user', action: 'publishDraftConfiguration' },
+      },
+      tx,
+    );
+
+    return getConfigurationVersionDetail(input.organizationId, published.id, tx);
+  };
+
+  if (txClient && 'execute' in txClient) {
+    return execute(txClient as DatabaseTransaction);
+  }
+  return db.transaction(execute);
 }
 
 /**

@@ -1,7 +1,9 @@
-import { sql, eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { db, DatabaseTransaction, DrizzleClient } from '../db/client';
 import { configurationVersions, roles, rolePermissions } from '../db/schema';
 import type { PermissionKey } from './permissions';
+import { logAuditEvent } from '../audit/service';
+import baseRolesData from './data/base-roles.json';
 
 export interface BaseRoleSeed {
   code: string;
@@ -11,93 +13,10 @@ export interface BaseRoleSeed {
 }
 
 /**
- * Base template permissions according to §30 and actores-y-roles.md.
- * These are inserted as dynamic data rows in the database, NEVER checked as hardcoded enums.
+ * Base template permissions loaded as external seed data (ADR-0004 & HU-003).
+ * These are inserted as dynamic data rows in the database, NEVER checked as hardcoded enums in application logic.
  */
-export const BASE_ROLES_TEMPLATE: readonly BaseRoleSeed[] = [
-  {
-    code: 'admin',
-    name: 'Administrador',
-    description: 'Configura la plataforma para su empresa, gestiona usuarios y administra roles',
-    permissions: [
-      'configuration:view',
-      'configuration:publish',
-      'configuration:administer',
-      'memberships:manage',
-      'audit:view',
-    ],
-  },
-  {
-    code: 'compliance_officer',
-    name: 'Oficial de Cumplimiento',
-    description: 'Responsable legal del proceso. Aprueba o rechaza expedientes, alertas y metodología',
-    permissions: [
-      'dossier:view',
-      'dossier:review',
-      'dossier:approve',
-      'dossier:export',
-      'document:view',
-      'document:review',
-      'alert:view',
-      'alert:resolve',
-      'risk_methodology:view',
-      'risk_methodology:edit',
-      'audit:view',
-      'configuration:view',
-      'configuration:publish',
-    ],
-  },
-  {
-    code: 'compliance_analyst',
-    name: 'Analista de Cumplimiento',
-    description: 'Revisa expedientes y alertas del día a día',
-    permissions: [
-      'dossier:view',
-      'dossier:review',
-      'dossier:export',
-      'document:view',
-      'document:review',
-      'alert:view',
-      'alert:resolve',
-      'audit:view',
-      'configuration:view',
-    ],
-  },
-  {
-    code: 'reviewer',
-    name: 'Revisor / Aprobador',
-    description: 'Revisa expedientes y aprueba según la política de la organización',
-    permissions: [
-      'dossier:view',
-      'dossier:review',
-      'document:view',
-      'document:review',
-    ],
-  },
-  {
-    code: 'auditor',
-    name: 'Auditor / Consulta',
-    description: 'Solo lectura e inspección de expedientes y bitácora. Cero permisos de escritura',
-    permissions: [
-      'dossier:view',
-      'document:view',
-      'alert:view',
-      'risk_methodology:view',
-      'audit:view',
-      'configuration:view',
-    ],
-  },
-  {
-    code: 'operational_user',
-    name: 'Usuario operativo',
-    description: 'Crea solicitudes de vinculación desde su área',
-    permissions: [
-      'dossier:create',
-      'dossier:view',
-      'document:upload',
-    ],
-  },
-] as const;
+export const BASE_ROLES_TEMPLATE: readonly BaseRoleSeed[] = baseRolesData as unknown as BaseRoleSeed[];
 
 export interface PublishVersionInput {
   organizationId: string;
@@ -182,27 +101,27 @@ export async function publishConfigurationVersion(
       }
     }
 
-    // 5. Audit log entry for publishing
-    await tx.execute(sql`
-      INSERT INTO public.audit_log (
-        organization_id,
-        actor_user_id,
-        action,
-        metadata,
-        origin
-      ) VALUES (
-        ${input.organizationId}::uuid,
-        ${input.publishedBy}::uuid,
-        'configuration.published',
-        ${JSON.stringify({
+    // 5. Audit log entry for publishing via transversal logAuditEvent
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorUserId: input.publishedBy,
+        action: 'configuration.published',
+        entity: 'configuration_version',
+        entityId: newVer.id,
+        reason: input.reason,
+        configurationVersionId: newVer.id,
+        metadata: {
           version_id: newVer.id,
           version_number: nextNumber,
           reason: input.reason,
           roles_count: input.rolesConfig.length,
-        })}::jsonb,
-        ${JSON.stringify({ actor: 'user', action: 'publishConfigurationVersion' })}::jsonb
-      )
-    `);
+        },
+        origin: { actor: 'user', action: 'publishConfigurationVersion' },
+      },
+      tx,
+    );
 
     return { versionId: newVer.id, versionNumber: nextNumber };
   };

@@ -1,6 +1,7 @@
-import { sql, eq, and, desc } from 'drizzle-orm';
-import { db, DrizzleClient } from '../db/client';
+import { eq, and, desc } from 'drizzle-orm';
+import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
 import { assertions } from '../db/schema';
+import { logAuditEvent } from '../audit/service';
 
 export type AssertionOrigin = 'declared' | 'extracted' | 'verified' | 'evaluated';
 export type AssertionStatus = 'active' | 'discarded';
@@ -64,8 +65,6 @@ export async function registerAssertion(
   input: RegisterAssertionInput,
   txClient?: DrizzleClient,
 ): Promise<AssertionDetail> {
-  const client = txClient || db;
-
   // 1. Validate required origin
   if (!input.origin) {
     throw new Error('No se puede registrar una afirmación sin origen');
@@ -97,55 +96,63 @@ export async function registerAssertion(
     }
   }
 
-  // 4. Insert assertion
-  const [created] = await client
-    .insert(assertions)
-    .values({
-      organizationId: input.organizationId,
-      dossierId: input.dossierId,
-      partyId: input.partyId,
-      configurationVersionId: input.configurationVersionId,
-      field: input.field,
-      value: input.value,
-      origin: input.origin,
-      producedBy: input.producedBy,
-      evidenceId: input.evidenceId || null,
-      confidence: input.confidence || null,
-      aiModelMetadata: input.aiModelMetadata || null,
-      status: 'active',
-    })
-    .returning();
-
-  // 5. Register in audit_log
-  await client.execute(sql`
-    INSERT INTO public.audit_log (
-      organization_id,
-      actor_user_id,
-      action,
-      metadata,
-      origin
-    ) VALUES (
-      ${input.organizationId}::uuid,
-      ${input.producedBy}::uuid,
-      'assertion.registered',
-      ${JSON.stringify({
-        assertion_id: created.id,
-        dossier_id: input.dossierId,
+  const execute = async (tx: DatabaseTransaction) => {
+    // 4. Insert assertion
+    const [created] = await tx
+      .insert(assertions)
+      .values({
+        organizationId: input.organizationId,
+        dossierId: input.dossierId,
+        partyId: input.partyId,
+        configurationVersionId: input.configurationVersionId,
         field: input.field,
+        value: input.value,
         origin: input.origin,
-        evidence_id: input.evidenceId,
-        confidence: input.confidence,
-      })}::jsonb,
-      ${JSON.stringify({ actor: 'user', service: 'registerAssertion' })}::jsonb
-    )
-  `);
+        producedBy: input.producedBy,
+        evidenceId: input.evidenceId || null,
+        confidence: input.confidence || null,
+        aiModelMetadata: input.aiModelMetadata || null,
+        status: 'active',
+      })
+      .returning();
 
-  return {
-    ...created,
-    origin: created.origin as AssertionOrigin,
-    status: created.status as AssertionStatus,
-    aiModelMetadata: created.aiModelMetadata as AiModelMetadata | null,
+    // 5. Register in audit_log via transversal logAuditEvent
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorUserId: input.producedBy,
+        action: 'assertion.registered',
+        entity: 'assertion',
+        entityId: created.id,
+        configurationVersionId: input.configurationVersionId,
+        newValue: input.value,
+        metadata: {
+          assertion_id: created.id,
+          dossier_id: input.dossierId,
+          party_id: input.partyId,
+          field: input.field,
+          origin: input.origin,
+          evidence_id: input.evidenceId,
+          confidence: input.confidence,
+        },
+        origin: { actor: 'user', service: 'registerAssertion' },
+      },
+      tx,
+    );
+
+    return {
+      ...created,
+      origin: created.origin as AssertionOrigin,
+      status: created.status as AssertionStatus,
+      aiModelMetadata: created.aiModelMetadata as AiModelMetadata | null,
+    };
   };
+
+  if (txClient && 'execute' in txClient) {
+    return execute(txClient as DatabaseTransaction);
+  }
+  return db.transaction(execute);
 }
 
 /**
@@ -188,72 +195,76 @@ export async function resolveDiscrepancy(
   input: ResolveDiscrepancyInput,
   txClient?: DrizzleClient,
 ): Promise<{ activeAssertion: AssertionDetail; discardedAssertions: AssertionDetail[] }> {
-  const client = txClient || db;
-
   if (!input.resolutionNote || input.resolutionNote.trim() === '') {
     throw new Error('La resolución de una discrepancia exige una justificación o fundamento');
   }
 
-  // Get all active assertions for the field
-  const fieldAssertions = await client
-    .select()
-    .from(assertions)
-    .where(
-      and(
-        eq(assertions.organizationId, input.organizationId),
-        eq(assertions.dossierId, input.dossierId),
-        eq(assertions.field, input.field),
-      ),
+  const execute = async (tx: DatabaseTransaction) => {
+    // Get all active assertions for the field
+    const fieldAssertions = await tx
+      .select()
+      .from(assertions)
+      .where(
+        and(
+          eq(assertions.organizationId, input.organizationId),
+          eq(assertions.dossierId, input.dossierId),
+          eq(assertions.field, input.field),
+        ),
+      );
+
+    const selected = fieldAssertions.find((a) => a.id === input.selectedAssertionId);
+    if (!selected) {
+      throw new Error('La afirmación seleccionada no existe para este campo y expediente');
+    }
+
+    const otherAssertions = fieldAssertions.filter((a) => a.id !== input.selectedAssertionId);
+
+    const now = new Date();
+
+    // Mark other assertions as discarded (trigger permits updating status, note, resolvedBy, resolvedAt)
+    for (const other of otherAssertions) {
+      await tx
+        .update(assertions)
+        .set({
+          status: 'discarded',
+          resolutionNote: input.resolutionNote,
+          resolvedBy: input.resolvedBy,
+          resolvedAt: now,
+        })
+        .where(eq(assertions.id, other.id));
+    }
+
+    // Record discrepancy resolution in audit log via transversal logAuditEvent
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorUserId: input.resolvedBy,
+        action: 'assertion.discrepancy_resolved',
+        entity: 'assertion',
+        entityId: input.selectedAssertionId,
+        reason: input.resolutionNote,
+        metadata: {
+          field: input.field,
+          dossier_id: input.dossierId,
+          selected_assertion_id: input.selectedAssertionId,
+          discarded_assertion_ids: otherAssertions.map((a) => a.id),
+          resolution_note: input.resolutionNote,
+        },
+        origin: { actor: 'user', service: 'resolveDiscrepancy' },
+      },
+      tx,
     );
 
-  const selected = fieldAssertions.find((a) => a.id === input.selectedAssertionId);
-  if (!selected) {
-    throw new Error('La afirmación seleccionada no existe para este campo y expediente');
+    const updatedRows = await getAssertionsForField(input.organizationId, input.dossierId, input.field, tx);
+    const active = updatedRows.find((a) => a.id === input.selectedAssertionId)!;
+    const discarded = updatedRows.filter((a) => a.id !== input.selectedAssertionId);
+
+    return { activeAssertion: active, discardedAssertions: discarded };
+  };
+
+  if (txClient && 'execute' in txClient) {
+    return execute(txClient as DatabaseTransaction);
   }
-
-  const otherAssertions = fieldAssertions.filter((a) => a.id !== input.selectedAssertionId);
-
-  const now = new Date();
-
-  // Mark other assertions as discarded (trigger permits updating status, note, resolvedBy, resolvedAt)
-  for (const other of otherAssertions) {
-    await client
-      .update(assertions)
-      .set({
-        status: 'discarded',
-        resolutionNote: input.resolutionNote,
-        resolvedBy: input.resolvedBy,
-        resolvedAt: now,
-      })
-      .where(eq(assertions.id, other.id));
-  }
-
-  // Record discrepancy resolution in audit log
-  await client.execute(sql`
-    INSERT INTO public.audit_log (
-      organization_id,
-      actor_user_id,
-      action,
-      metadata,
-      origin
-    ) VALUES (
-      ${input.organizationId}::uuid,
-      ${input.resolvedBy}::uuid,
-      'assertion.discrepancy_resolved',
-      ${JSON.stringify({
-        field: input.field,
-        dossier_id: input.dossierId,
-        selected_assertion_id: input.selectedAssertionId,
-        discarded_assertion_ids: otherAssertions.map((a) => a.id),
-        resolution_note: input.resolutionNote,
-      })}::jsonb,
-      ${JSON.stringify({ actor: 'user', service: 'resolveDiscrepancy' })}::jsonb
-    )
-  `);
-
-  const updatedRows = await getAssertionsForField(input.organizationId, input.dossierId, input.field, client);
-  const active = updatedRows.find((a) => a.id === input.selectedAssertionId)!;
-  const discarded = updatedRows.filter((a) => a.id !== input.selectedAssertionId);
-
-  return { activeAssertion: active, discardedAssertions: discarded };
+  return db.transaction(execute);
 }

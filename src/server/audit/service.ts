@@ -41,6 +41,17 @@ export interface LogAuditEventInput {
   requireReason?: boolean; // If true, reason is mandatory
 }
 
+/**
+ * Catálogo de acciones sensibles del dominio que exigen justificación explícita obligatoria.
+ * (HU-006 & ADR-0007)
+ */
+export const SENSITIVE_ACTIONS_REQUIRING_REASON = new Set([
+  'dossier.override_risk',
+  'assertion.discrepancy_resolved',
+  'configuration.published',
+]);
+
+
 export interface AuditLogDetail {
   id: string;
   organizationId: string;
@@ -119,8 +130,9 @@ export async function logAuditEvent(
     throw new Error('Un proceso automático del sistema no se puede atribuir a una persona');
   }
 
-  // 3. Validate mandatory justification
-  if (input.requireReason && (!input.reason || input.reason.trim() === '')) {
+  // 3. Validate mandatory justification (either explicit requireReason or automatic by sensitive catalog)
+  const isReasonMandatory = input.requireReason || SENSITIVE_ACTIONS_REQUIRING_REASON.has(input.action);
+  if (isReasonMandatory && (!input.reason || input.reason.trim() === '')) {
     throw new Error('Esta acción exige una justificación o motivo explícito');
   }
 

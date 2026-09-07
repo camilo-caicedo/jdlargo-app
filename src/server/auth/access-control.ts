@@ -1,8 +1,9 @@
-import { sql, eq, and } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { db, DrizzleClient, TenantContext } from '../db/client';
 import { memberships, roles, rolePermissions } from '../db/schema';
 import type { PermissionKey } from './permissions';
 import { getActiveConfigurationVersion } from './role-config';
+import { logAuditEvent } from '../audit/service';
 
 export interface PermissionCheckResult {
   granted: boolean;
@@ -113,6 +114,10 @@ export async function checkUserPermission(
 /**
  * Enforces a required permission. If denied, writes an audit log entry
  * documenting the failed attempt, the evaluated configuration version, and throws an error.
+ * 
+ * In accordance with ADR-0007 and HU-003 audit findings, the audit event is persisted
+ * using the top-level database connection (db) to guarantee that caller transaction rollbacks
+ * cannot erase the security denial record.
  */
 export async function enforceUserPermission(
   context: TenantContext,
@@ -128,20 +133,19 @@ export async function enforceUserPermission(
   );
 
   if (!result.granted) {
-    // Audit log entry for authorization denial (Escenario: Una acción sin permiso se rechaza y queda registrada)
-    const client = txClient || db;
-    await client.execute(sql`
-      INSERT INTO public.audit_log (
-        organization_id,
-        actor_user_id,
-        action,
-        metadata,
-        origin
-      ) VALUES (
-        ${context.organizationId}::uuid,
-        ${context.userId}::uuid,
-        'security.permission_denied',
-        ${JSON.stringify({
+    // Audit log entry for authorization denial using transversal logAuditEvent
+    // Always written to top-level db connection to persist despite caller rollback
+    await logAuditEvent(
+      {
+        organizationId: context.organizationId,
+        actorType: 'user',
+        actorUserId: context.userId,
+        action: 'security.permission_denied',
+        entity: 'role_permission',
+        entityId: permission,
+        configurationVersionId: result.configurationVersionId || undefined,
+        reason: result.reason,
+        metadata: {
           permission,
           user_role: result.userRole,
           configuration_version_id: result.configurationVersionId,
@@ -149,10 +153,11 @@ export async function enforceUserPermission(
           reason: result.reason,
           attempted_action: permission,
           ...(metadata || {}),
-        })}::jsonb,
-        ${JSON.stringify({ actor: 'user', context: 'enforceUserPermission' })}::jsonb
-      )
-    `);
+        },
+        origin: { actor: 'user', context: 'enforceUserPermission' },
+      },
+      db, // Explicitly pass top-level db so caller rollback does not lose security record
+    );
 
     throw new Error(
       `Acción no autorizada: falta el permiso '${permission}' en la versión de configuración ${result.configurationVersionNumber || 'N/A'}.`,
@@ -161,3 +166,4 @@ export async function enforceUserPermission(
 
   return result;
 }
+

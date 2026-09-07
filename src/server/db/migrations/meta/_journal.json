@@ -50,6 +50,13 @@
       "when": 1788738000000,
       "tag": "0006_audit_log_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788739000000,
+      "tag": "0007_audit_and_config_hardening",
+      "breakpoints": true
     }
   ]
 }
