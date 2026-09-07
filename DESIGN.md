@@ -100,16 +100,20 @@ Comparte la misma familia visual que el Portal de la contraparte (tarjeta única
 Superficie pública de bienvenida y presentación del producto (HU-058).
 Es la única página donde un *hero* centrado con jerarquía tipográfica amplia y llamada a la acción es deliberadamente correcto (la prohibición general de *marketing hero* de este documento aplica exclusivamente a las pantallas internas de la aplicación).
 
-- **Header:** barra superior con efecto translúcido (`backdrop-blur-md`), isotipo/marca sobrio "JD Largo" a la izquierda y botón de acceso directo "Iniciar sesión" a la derecha (`/login`).
+- **Fondo y ambientación:** degradado radial sutil en el borde superior (`radial-gradient` con opacidad del 8% de `--primary`), sin formas poligonales complejas ni blobs genéricos. `min-h-dvh` para evitar saltos en viewport móvil.
+- **Header:** barra superior con efecto translúcido (`backdrop-blur-md`), isotipo/marca sobrio "JD Largo" a la izquierda y botón de acceso directo "Iniciar sesión" a la derecha (`/login`) con área táctil cómoda (mínimo 44px de alto en móvil).
 - **Hero:**
   - Título con posicionamiento oficial: "Automatización de Debida Diligencia" con degradado tipográfico sutil en escala de grises.
-  - Párrafo de valor validado: recolección, extracción, verificación, evaluación y registro, recordando explícitamente que la decisión pertenece al cliente.
+  - Párrafo de valor validado: recolección, extracción, verificación, evaluación y registro, recordando explícitamente que la decisión y la responsabilidad pertenecen al cliente.
   - Botón primario de acceso ("Acceder a la plataforma") con sombra sobria y efecto de elevación en hover.
-  - Fila de 4 pilares de valor clave con íconos de verificación.
-- **Showcase de producto:** tarjeta estilo ventana de aplicación que previsualiza un expediente ficticio en revisión, estado de listas restrictivas y evaluación de riesgo, permitiendo al visitante comprender de inmediato la naturaleza del software sin revelar datos sensibles.
-- **Ciclo de vinculación:** cuadrícula de 3 tarjetas (`Card`) con hover interactivo para Recolección Asistida, Estándares Configurables y Trazabilidad Total.
+  - Fila de 4 pilares de valor clave con íconos de verificación (`CheckCircle2`).
+- **Ciclo de vinculación:** cuadrícula de 3 tarjetas (`Card`) con elevación suave en hover (`hover:-translate-y-0.5 hover:shadow-md`) y transición sobre propiedades específicas (`transform`, `box-shadow`, `border-color`), respetando `prefers-reduced-motion`. Describe estrictamente las capacidades vigentes del producto:
+  - *Acceso Seguro por Enlace* (tokens criptográficos de un solo uso y 2FA).
+  - *Matriz de Requisitos por Estándar* (versiones inmutables por organización).
+  - *Trazabilidad Total* (bitácora y reconstrucción de auditoría).
 - **Footer:** pie de página austero de una sola fila con copyright, correo de soporte de texto plano y enlace discreto de acceso interno. Sin enlaces rotos a páginas inexistentes.
 - **Regla inquebrantable (`ADR-0006`):** cero uso de las palabras "certifica", "certificado" o "certificación" atribuidas al software o a los resultados.
+
 
 
 
