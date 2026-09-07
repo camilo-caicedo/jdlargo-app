@@ -48,19 +48,19 @@ async function cleanupTestData() {
   await adminSql`
     DELETE FROM public.audit_log
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu056.com')
+       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%test-hu056%')
   `;
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`
     DELETE FROM public.memberships
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu056.com')
+       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%test-hu056%')
   `;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`
     DELETE FROM public.invitations
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR invited_by IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu056.com')
+       OR invited_by IN (SELECT id FROM auth.users WHERE email LIKE '%test-hu056%')
   `;
   await adminSql`
     DELETE FROM public.role_permissions
@@ -83,8 +83,8 @@ async function cleanupTestData() {
     DELETE FROM public.organizations
     WHERE name IN ${adminSql(TEST_ORG_NAMES)}
   `;
-  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu056.com'`;
-  await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu056.com'`;
+  await adminSql`DELETE FROM public.users WHERE email LIKE '%test-hu056%'`;
+  await adminSql`DELETE FROM auth.users WHERE email LIKE '%test-hu056%'`;
   await adminSql`RESET app.allow_config_cleanup`;
 }
 
@@ -215,7 +215,17 @@ describe('HU-056: Invitar miembros a la organización', () => {
 
     // 2. Modificar email o columnas no autorizadas debe ser rechazado
     await expect(
-      adminSql`UPDATE public.invitations SET state = 'revoked', email = 'hack@test.com' WHERE id = ${inv.id}`,
+      adminSql`UPDATE public.invitations SET state = 'revoked', revoked_at = now(), revoked_by = ${adminUserId}, email = 'hack@test.com' WHERE id = ${inv.id}`,
     ).rejects.toThrow(/Cannot modify core invitation fields/);
+
+    // 3. Transición a revoked sin revoked_at/revoked_by debe ser rechazada por el trigger
+    await expect(
+      adminSql`UPDATE public.invitations SET state = 'revoked' WHERE id = ${inv.id}`,
+    ).rejects.toThrow(/Transition to revoked requires revoked_by and revoked_at/);
+
+    // 4. Transición a accepted con campos de revocación debe ser rechazada
+    await expect(
+      adminSql`UPDATE public.invitations SET state = 'accepted', accepted_at = now(), revoked_by = ${adminUserId} WHERE id = ${inv.id}`,
+    ).rejects.toThrow(/Transition to accepted cannot set revocation fields/);
   });
 });

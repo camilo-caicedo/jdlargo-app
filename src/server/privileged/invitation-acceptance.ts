@@ -141,57 +141,67 @@ export async function acceptInvitationAsNewUser(
   const newUserId = authData.user.id;
 
   // 3. Complete membership and invitation state transition in privileged transaction
-  await executePrivilegedSystemOperation(
-    {
-      action: 'invitation.accepted',
-      organizationId,
-      entity: 'invitation',
-      entityId: invitationId,
-      metadata: {
-        invitation_id: invitationId,
-        user_id: newUserId,
-        email,
-        role,
-        is_new_user: true,
-      },
-      description: 'Acceptance of member invitation by new user',
-    },
-    async (tx) => {
-      const now = new Date();
-
-      // Ensure user is in public.users (trigger sync usually does it, but upsert ensures atomic transaction safety)
-      await tx
-        .insert(users)
-        .values({
-          id: newUserId,
+  // Compensating action: If the database transaction fails (e.g. constraints, state mismatch),
+  // delete the created Supabase auth user to avoid orphan auth accounts without organization membership.
+  try {
+    await executePrivilegedSystemOperation(
+      {
+        action: 'invitation.accepted',
+        organizationId,
+        entity: 'invitation',
+        entityId: invitationId,
+        metadata: {
+          invitation_id: invitationId,
+          user_id: newUserId,
           email,
-          name: input.fullName.trim(),
-        })
-        .onConflictDoUpdate({
-          target: users.id,
-          set: { name: input.fullName.trim() },
-        });
-
-      // Insert active membership
-      await tx
-        .insert(memberships)
-        .values({
-          organizationId,
-          userId: newUserId,
           role,
-          status: 'active',
-        });
+          is_new_user: true,
+        },
+        description: 'Acceptance of member invitation by new user',
+      },
+      async (tx) => {
+        const now = new Date();
 
-      // Mark invitation as accepted
-      await tx
-        .update(invitations)
-        .set({
-          state: 'accepted',
-          acceptedAt: now,
-        })
-        .where(eq(invitations.id, invitationId));
-    },
-  );
+        // Ensure user is in public.users (trigger sync usually does it, but upsert ensures atomic transaction safety)
+        await tx
+          .insert(users)
+          .values({
+            id: newUserId,
+            email,
+            name: input.fullName.trim(),
+          })
+          .onConflictDoUpdate({
+            target: users.id,
+            set: { name: input.fullName.trim() },
+          });
+
+        // Insert active membership
+        await tx
+          .insert(memberships)
+          .values({
+            organizationId,
+            userId: newUserId,
+            role,
+            status: 'active',
+          });
+
+        // Mark invitation as accepted
+        await tx
+          .update(invitations)
+          .set({
+            state: 'accepted',
+            acceptedAt: now,
+          })
+          .where(eq(invitations.id, invitationId));
+      },
+    );
+  } catch (dbError) {
+    // Rollback auth user creation
+    await supabaseAdmin.auth.admin.deleteUser(newUserId).catch((delErr) => {
+      console.error('[acceptInvitationAsNewUser] Failed to delete orphan auth user:', delErr);
+    });
+    throw dbError;
+  }
 
   return { userId: newUserId };
 }

@@ -10,8 +10,10 @@ import { createOrganizationWithAdmin } from '../organizations/use-cases';
 import { seedBaseConfiguration } from '../auth/role-config';
 import {
   resolveInvitation,
+  acceptInvitationAsNewUser,
   acceptInvitationForExistingUser,
 } from './invitation-acceptance';
+import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import crypto from 'crypto';
 
 const directUrl = process.env.DIRECT_URL;
@@ -47,19 +49,19 @@ async function cleanupTestData() {
   await adminSql`
     DELETE FROM public.audit_log
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu056.com')
+       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%test-hu056%')
   `;
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`
     DELETE FROM public.memberships
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu056.com')
+       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%test-hu056%')
   `;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`
     DELETE FROM public.invitations
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR invited_by IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu056.com')
+       OR invited_by IN (SELECT id FROM auth.users WHERE email LIKE '%test-hu056%')
   `;
   await adminSql`
     DELETE FROM public.role_permissions
@@ -82,14 +84,15 @@ async function cleanupTestData() {
     DELETE FROM public.organizations
     WHERE name IN ${adminSql(TEST_ORG_NAMES)}
   `;
-  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu056.com'`;
-  await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu056.com'`;
+  await adminSql`DELETE FROM public.users WHERE email LIKE '%test-hu056%'`;
+  await adminSql`DELETE FROM auth.users WHERE email LIKE '%test-hu056%'`;
   await adminSql`RESET app.allow_config_cleanup`;
 }
 
 describe('HU-056: Aceptación de invitaciones en capa privilegiada', () => {
   let adminUserId: string;
   let orgId: string;
+  const createdNewUserIds: string[] = [];
 
   beforeAll(async () => {
     await cleanupTestData();
@@ -104,6 +107,12 @@ describe('HU-056: Aceptación de invitaciones en capa privilegiada', () => {
   }, 30000);
 
   afterAll(async () => {
+    const supabaseAdmin = createSupabaseAdminClient();
+    for (const uid of createdNewUserIds) {
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(uid);
+      } catch {}
+    }
     await cleanupTestData();
     await adminSql.end();
   });
@@ -206,5 +215,61 @@ describe('HU-056: Aceptación de invitaciones en capa privilegiada', () => {
     `;
     expect(invitationRow.state).toBe('accepted');
     expect(invitationRow.accepted_at).not.toBeNull();
+  });
+
+  it('Escenario: acceptInvitationAsNewUser crea usuario real en Supabase Auth, vincula membresía y pasa estado a accepted', async () => {
+    const rawNewUserToken = 'new_user_raw_token_12345678901234567890123456789012';
+    const newUserTokenHash = crypto.createHash('sha256').update(rawNewUserToken).digest('hex');
+    const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    const newUserEmail = 'nuevo-usuario@test-hu056-acc.com';
+
+    await adminSql`
+      INSERT INTO public.invitations (
+        organization_id, email, role, token_hash, expires_at, state, invited_by
+      ) VALUES (
+        ${orgId}, ${newUserEmail}, 'operations_user', ${newUserTokenHash}, ${futureDate}, 'pending', ${adminUserId}
+      )
+    `;
+
+    const result = await acceptInvitationAsNewUser(rawNewUserToken, {
+      fullName: 'Nuevo Usuario Prueba',
+      password: 'PasswordSegura123!',
+    });
+
+    expect(result.userId).toBeDefined();
+    createdNewUserIds.push(result.userId);
+
+    // 1. Validar que la membresía activa quedó creada
+    const [membership] = await adminSql`
+      SELECT role, status FROM public.memberships
+      WHERE organization_id = ${orgId} AND user_id = ${result.userId}
+    `;
+    expect(membership).toBeDefined();
+    expect(membership.role).toBe('operations_user');
+    expect(membership.status).toBe('active');
+
+    // 2. Validar que la invitación pasó a 'accepted' con accepted_at
+    const [invitationRow] = await adminSql`
+      SELECT state, accepted_at FROM public.invitations
+      WHERE token_hash = ${newUserTokenHash}
+    `;
+    expect(invitationRow.state).toBe('accepted');
+    expect(invitationRow.accepted_at).not.toBeNull();
+
+    // 3. Validar que el usuario existe en public.users con el nombre provisto
+    const [userRow] = await adminSql`
+      SELECT name, email FROM public.users WHERE id = ${result.userId}
+    `;
+    expect(userRow).toBeDefined();
+    expect(userRow.name).toBe('Nuevo Usuario Prueba');
+    expect(userRow.email).toBe(newUserEmail);
+
+    // 4. Intento de re-aceptar debe ser rechazado
+    await expect(
+      acceptInvitationAsNewUser(rawNewUserToken, {
+        fullName: 'Otro Intento',
+        password: 'PasswordSegura123!',
+      }),
+    ).rejects.toThrow();
   });
 });

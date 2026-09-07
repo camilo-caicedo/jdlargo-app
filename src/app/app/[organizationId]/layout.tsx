@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireAuthenticatedUserId, signOutAndRedirect } from '@/server/auth/session';
 import { listActiveMembershipsForUser } from '@/server/organizations/use-cases';
+import { checkUserPermission } from '@/server/auth/access-control';
 import { Button } from '@/components/ui/button';
 
 export default async function AppLayout({
@@ -21,6 +22,8 @@ export default async function AppLayout({
     redirect('/login/organizacion');
   }
 
+  const canManageMembers = (await checkUserPermission(userId, organizationId, 'memberships:manage')).granted;
+
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50 flex flex-col">
       <header className="border-b bg-white dark:bg-zinc-900 px-6 py-3 flex items-center justify-between shadow-xs">
@@ -36,12 +39,14 @@ export default async function AppLayout({
         </div>
 
         <div className="flex items-center gap-4">
-          <a
-            href={`/app/${organizationId}/miembros`}
-            className="text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 font-medium"
-          >
-            Miembros
-          </a>
+          {canManageMembers && (
+            <a
+              href={`/app/${organizationId}/miembros`}
+              className="text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 font-medium"
+            >
+              Miembros
+            </a>
+          )}
           <form action={signOutAndRedirect}>
             <Button variant="ghost" size="sm" type="submit" className="text-xs text-zinc-600 dark:text-zinc-400">
               Cerrar sesión

@@ -95,7 +95,8 @@ DECLARE
   v_allow_cleanup text;
 BEGIN
   v_allow_cleanup := current_setting('app.allow_config_cleanup', true);
-  IF v_allow_cleanup = 'true' THEN
+  -- Bypass strictly restricted to administrative users (postgres, service_role, supabase_admin) and NEVER authenticated or anon
+  IF v_allow_cleanup = 'true' AND current_user IN ('postgres', 'service_role', 'supabase_admin') AND current_user NOT IN ('authenticated', 'anon') THEN
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
     RETURN NEW;
   END IF;
@@ -123,6 +124,27 @@ BEGIN
        OLD.invited_by <> NEW.invited_by OR
        OLD.created_at <> NEW.created_at THEN
       RAISE EXCEPTION 'Cannot modify core invitation fields: only state, acceptance and revocation details can be updated';
+    END IF;
+
+    -- Strict validation of allowed column mutations per transition state:
+    IF NEW.state = 'accepted' THEN
+      IF NEW.accepted_at IS NULL THEN
+        RAISE EXCEPTION 'Transition to accepted requires accepted_at timestamp';
+      END IF;
+      IF NEW.revoked_by IS NOT NULL OR NEW.revoked_at IS NOT NULL THEN
+        RAISE EXCEPTION 'Transition to accepted cannot set revocation fields';
+      END IF;
+    ELSIF NEW.state = 'revoked' THEN
+      IF NEW.revoked_at IS NULL OR NEW.revoked_by IS NULL THEN
+        RAISE EXCEPTION 'Transition to revoked requires revoked_by and revoked_at';
+      END IF;
+      IF NEW.accepted_at IS NOT NULL THEN
+        RAISE EXCEPTION 'Transition to revoked cannot set accepted_at';
+      END IF;
+    ELSIF NEW.state IN ('replaced', 'expired') THEN
+      IF NEW.accepted_at IS NOT NULL OR NEW.revoked_by IS NOT NULL OR NEW.revoked_at IS NOT NULL THEN
+        RAISE EXCEPTION 'Transition to % cannot set accepted or revocation fields', NEW.state;
+      END IF;
     END IF;
 
     RETURN NEW;
