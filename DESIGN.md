@@ -26,8 +26,8 @@ package), **Untitled UI**, **Linear**, and Vercel's **Geist** design system:
 
 ## Typography
 
-Geist Sans or Inter. Tight negative letter-spacing on headings. Type scale:
-12 / 14 / 16 / 20 / 24 / 32px. Generous body line-height.
+Plus Jakarta Sans (primary font variable `--font-sans`). Tight negative letter-spacing on headings. Type scale:
+12 / 14 / 16 / 20 / 24 / 32px. Generous body line-height. Monospace: Geist Mono.
 
 ## Color
 
