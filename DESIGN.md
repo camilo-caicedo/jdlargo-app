@@ -95,4 +95,21 @@ Comparte la misma familia visual que el Portal de la contraparte (tarjeta única
     - Botón secundario o de enlace sutil "Cerrar sesión" alineado a la derecha.
   - Sin sidebar, buscador ni menús complejos hasta la especificación de la historia del Shell general del producto.
 
+## Página de inicio pública
+
+Superficie pública de bienvenida y presentación del producto (HU-058).
+Es la única página donde un *hero* centrado con jerarquía tipográfica amplia y llamada a la acción es deliberadamente correcto (la prohibición general de *marketing hero* de este documento aplica exclusivamente a las pantallas internas de la aplicación).
+
+- **Header:** barra superior con efecto translúcido (`backdrop-blur-md`), isotipo/marca sobrio "JD Largo" a la izquierda y botón de acceso directo "Iniciar sesión" a la derecha (`/login`).
+- **Hero:**
+  - Título con posicionamiento oficial: "Automatización de Debida Diligencia" con degradado tipográfico sutil en escala de grises.
+  - Párrafo de valor validado: recolección, extracción, verificación, evaluación y registro, recordando explícitamente que la decisión pertenece al cliente.
+  - Botón primario de acceso ("Acceder a la plataforma") con sombra sobria y efecto de elevación en hover.
+  - Fila de 4 pilares de valor clave con íconos de verificación.
+- **Showcase de producto:** tarjeta estilo ventana de aplicación que previsualiza un expediente ficticio en revisión, estado de listas restrictivas y evaluación de riesgo, permitiendo al visitante comprender de inmediato la naturaleza del software sin revelar datos sensibles.
+- **Ciclo de vinculación:** cuadrícula de 3 tarjetas (`Card`) con hover interactivo para Recolección Asistida, Estándares Configurables y Trazabilidad Total.
+- **Footer:** pie de página austero de una sola fila con copyright, correo de soporte de texto plano y enlace discreto de acceso interno. Sin enlaces rotos a páginas inexistentes.
+- **Regla inquebrantable (`ADR-0006`):** cero uso de las palabras "certifica", "certificado" o "certificación" atribuidas al software o a los resultados.
+
+
 

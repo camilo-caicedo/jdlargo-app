@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Plataforma JD Largo",
-  description: "Debida diligencia y cumplimiento normativo LA/FT/FPADM",
+  title: "JD Largo — Automatización de Debida Diligencia",
+  description:
+    "Plataforma de automatización y trazabilidad de debida diligencia LA/FT/FPADM (SARLAFT, SAGRILAFT, PTEE). Recolecta, extrae, verifica, evalúa y deja registro.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
