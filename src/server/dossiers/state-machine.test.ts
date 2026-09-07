@@ -191,6 +191,21 @@ describe('HU-009: Máquina de estados del expediente', () => {
     // La bitácora transversal o el historial conserva solo 1 transición
     const history = await getDossierHistory(org.id, dossier.id);
     expect(history).toHaveLength(1);
+
+    // El intento queda registrado en la bitácora transversal (audit_log)
+    const auditLogs = await adminSql<{ action: string; metadata: Record<string, unknown> | null; actor_user_id: string }[]>`
+      SELECT action, metadata, actor_user_id
+      FROM public.audit_log
+      WHERE organization_id = ${org.id}
+        AND action = 'dossier.transition_rejected'
+      ORDER BY occurred_at DESC
+      LIMIT 1
+    `;
+    expect(auditLogs).toHaveLength(1);
+    expect(auditLogs[0].actor_user_id).toBe(adminUser);
+    expect(auditLogs[0].metadata?.from_state).toBe('enviada');
+    expect(auditLogs[0].metadata?.attempted_to_state).toBe('aprobada');
+    expect(auditLogs[0].metadata?.rejection_type).toBe('undeclared_transition');
   }, 30000);
 
   it('Escenario: El estado no se puede cambiar por fuera de la máquina', async () => {

@@ -88,14 +88,56 @@ export async function executeTransition(
     );
 
   if (!validTransition) {
-    throw new Error(
-      `Transición no permitida: no existe transición declarada de '${dossier.state}' hacia '${input.toState}'`,
+    const reasonMessage = `Transición no permitida: no existe transición declarada de '${dossier.state}' hacia '${input.toState}'`;
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: input.actorType,
+        actorUserId: input.actorType === 'user' ? input.actorId : undefined,
+        action: 'dossier.transition_rejected',
+        entity: 'dossier',
+        entityId: input.dossierId,
+        configurationVersionId: dossier.configurationVersionId,
+        reason: reasonMessage,
+        metadata: {
+          dossier_id: input.dossierId,
+          from_state: dossier.state,
+          attempted_to_state: input.toState,
+          rejection_type: 'undeclared_transition',
+        },
+        origin: { actor: input.actorType, action: 'executeTransition' },
+      },
+      db, // Top-level db so error/caller rollback does not lose rejection audit record
     );
+
+    throw new Error(reasonMessage);
   }
 
   // 3. Validate reason if required
   if (validTransition.requiresReason && (!input.reason || input.reason.trim() === '')) {
-    throw new Error(`La transición de '${dossier.state}' hacia '${input.toState}' exige un motivo obligatorio`);
+    const reasonMessage = `La transición de '${dossier.state}' hacia '${input.toState}' exige un motivo obligatorio`;
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: input.actorType,
+        actorUserId: input.actorType === 'user' ? input.actorId : undefined,
+        action: 'dossier.transition_rejected',
+        entity: 'dossier',
+        entityId: input.dossierId,
+        configurationVersionId: dossier.configurationVersionId,
+        reason: reasonMessage,
+        metadata: {
+          dossier_id: input.dossierId,
+          from_state: dossier.state,
+          attempted_to_state: input.toState,
+          rejection_type: 'missing_required_reason',
+        },
+        origin: { actor: input.actorType, action: 'executeTransition' },
+      },
+      db,
+    );
+
+    throw new Error(reasonMessage);
   }
 
   // 4. Permission enforcement:
