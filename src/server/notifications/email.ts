@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 import { AccessLinkEmail } from './emails/access-link';
 import { OtpCodeEmail } from './emails/otp-code';
+import { InvitationEmail } from './emails/invitation';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -8,7 +9,7 @@ export const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
 // Allow spying/intercepting sent emails in unit tests
 export const mockSentEmails: Array<{
-  type: 'access_link' | 'otp';
+  type: 'access_link' | 'otp' | 'invitation';
   to: string;
   payload: Record<string, unknown>;
 }> = [];
@@ -75,5 +76,38 @@ export async function sendOtpEmail(input: SendOtpEmailInput): Promise<void> {
     });
   } catch (error) {
     console.error('[sendOtpEmail] Error sending OTP email via Resend:', error);
+  }
+}
+
+export interface SendInvitationEmailInput {
+  to: string;
+  organizationName: string;
+  invitationUrl: string;
+  roleName: string;
+}
+
+export async function sendInvitationEmail(input: SendInvitationEmailInput): Promise<void> {
+  if (process.env.NODE_ENV === 'test' || !resend) {
+    mockSentEmails.push({
+      type: 'invitation',
+      to: input.to,
+      payload: input as unknown as Record<string, unknown>,
+    });
+    return;
+  }
+
+  try {
+    await resend.emails.send({
+      from: 'JD Largo <invitaciones@jdlargo.com>',
+      to: input.to,
+      subject: `Invitación para unirse a ${input.organizationName} en JD Largo`,
+      react: InvitationEmail({
+        organizationName: input.organizationName,
+        invitationUrl: input.invitationUrl,
+        roleName: input.roleName,
+      }),
+    });
+  } catch (error) {
+    console.error('[sendInvitationEmail] Error sending invitation email via Resend:', error);
   }
 }

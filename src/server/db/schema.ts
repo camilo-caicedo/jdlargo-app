@@ -267,3 +267,22 @@ export const dossierAccessOtpCodes = pgTable('dossier_access_otp_codes', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS();
 
+// invitations — invitaciones de nuevos miembros a la organización (HU-056)
+export const invitations = pgTable('invitations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  email: text('email').notNull(),
+  role: text('role').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  state: text('state', { enum: ['pending', 'accepted', 'expired', 'revoked', 'replaced'] }).notNull().default('pending'),
+  invitedBy: uuid('invited_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  revokedBy: uuid('revoked_by').references(() => users.id),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+}, (t) => [
+  uniqueIndex('invitations_token_hash_unique').on(t.tokenHash),
+  uniqueIndex('invitations_org_email_pending_unique').on(t.organizationId, t.email).where(sql`state = 'pending'`),
+]).enableRLS();
+

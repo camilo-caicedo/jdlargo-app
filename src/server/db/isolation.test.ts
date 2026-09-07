@@ -45,6 +45,7 @@ async function cleanupTestData() {
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`DELETE FROM public.memberships`;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
+  await adminSql`DELETE FROM public.invitations`;
   await adminSql`DELETE FROM public.dossier_access_otp_codes`;
   await adminSql`DELETE FROM public.dossier_access_uses`;
   await adminSql`DELETE FROM public.dossier_access_tokens`;
@@ -222,6 +223,8 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
         insertSql = `INSERT INTO public.dossier_access_uses (organization_id, dossier_id, ip_address, user_agent, result) VALUES ('${orgA.id}', gen_random_uuid(), '127.0.0.1', 'Vitest', 'granted')`;
       } else if (tableName === 'dossier_access_otp_codes') {
         insertSql = `INSERT INTO public.dossier_access_otp_codes (organization_id, dossier_id, access_token_id, code_hash, expires_at) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), 'hash_${userB}', now() + interval '10 minutes')`;
+      } else if (tableName === 'invitations') {
+        insertSql = `INSERT INTO public.invitations (organization_id, email, role, token_hash, expires_at, invited_by) VALUES ('${orgA.id}', 'cross@test.com', 'compliance_analyst', 'hash_${userB}', now() + interval '7 days', '${userB}')`;
       } else {
         insertSql = `INSERT INTO public.${tableName} (organization_id) VALUES ('${orgA.id}')`;
       }
