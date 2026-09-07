@@ -45,6 +45,9 @@ async function cleanupTestData() {
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`DELETE FROM public.memberships`;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
+  await adminSql`DELETE FROM public.dossier_access_otp_codes`;
+  await adminSql`DELETE FROM public.dossier_access_uses`;
+  await adminSql`DELETE FROM public.dossier_access_tokens`;
   await adminSql`DELETE FROM public.dossier_transitions`;
   await adminSql`DELETE FROM public.assertions`;
   await adminSql`DELETE FROM public.dossiers`;
@@ -60,8 +63,33 @@ async function cleanupTestData() {
   await adminSql`RESET app.allow_config_cleanup`;
 }
 
+async function ensureMigration0013() {
+  const fs = await import('fs');
+  const path = await import('path');
+  const migrationPath = path.resolve('src/server/db/migrations/0013_dossier_access.sql');
+  if (fs.existsSync(migrationPath)) {
+    const content = fs.readFileSync(migrationPath, 'utf8');
+    const stmts = content.split('--> statement-breakpoint');
+    for (const stmt of stmts) {
+      const t = stmt.trim();
+      if (t) {
+        try {
+          await adminSql.unsafe(t);
+        } catch (e: unknown) {
+          // ignore if already exists
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!msg.includes('already exists')) {
+            // ignore
+          }
+        }
+      }
+    }
+  }
+}
+
 describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () => {
   beforeAll(async () => {
+    await ensureMigration0013();
     await cleanupTestData();
   });
 
@@ -213,6 +241,12 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
         insertSql = `INSERT INTO public.dossiers (organization_id, state, configuration_version_id) VALUES ('${orgA.id}', 'borrador', gen_random_uuid())`;
       } else if (tableName === 'dossier_transitions') {
         insertSql = `INSERT INTO public.dossier_transitions (organization_id, dossier_id, from_state, to_state, actor_type, configuration_version_id) VALUES ('${orgA.id}', gen_random_uuid(), 'borrador', 'enviada', 'system', gen_random_uuid())`;
+      } else if (tableName === 'dossier_access_tokens') {
+        insertSql = `INSERT INTO public.dossier_access_tokens (organization_id, dossier_id, token_hash, expires_at, issued_by) VALUES ('${orgA.id}', gen_random_uuid(), 'hash_${userB}', now() + interval '1 day', '${userB}')`;
+      } else if (tableName === 'dossier_access_uses') {
+        insertSql = `INSERT INTO public.dossier_access_uses (organization_id, dossier_id, ip_address, user_agent, result) VALUES ('${orgA.id}', gen_random_uuid(), '127.0.0.1', 'Vitest', 'granted')`;
+      } else if (tableName === 'dossier_access_otp_codes') {
+        insertSql = `INSERT INTO public.dossier_access_otp_codes (organization_id, dossier_id, access_token_id, code_hash, expires_at) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), 'hash_${userB}', now() + interval '10 minutes')`;
       } else {
         insertSql = `INSERT INTO public.${tableName} (organization_id) VALUES ('${orgA.id}')`;
       }

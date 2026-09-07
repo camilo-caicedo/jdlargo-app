@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, uniqueIndex, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, jsonb, uniqueIndex, boolean, integer } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // users — perfil, vive por encima de las organizaciones
@@ -219,6 +219,50 @@ export const dossierTransitions = pgTable('dossier_transitions', {
   occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
   reason: text('reason'),
   configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}).enableRLS();
+
+// dossier_access_tokens — un enlace de acceso por expediente (HU-010)
+export const dossierAccessTokens = pgTable('dossier_access_tokens', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  tokenHash: text('token_hash').notNull(),          // sha256 del valor crudo — nunca se guarda el valor
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  state: text('state', { enum: ['active', 'expired', 'revoked', 'replaced'] }).notNull().default('active'),
+  requiresSecondFactor: boolean('requires_second_factor').notNull().default(false),
+  issuedBy: uuid('issued_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  revokedBy: uuid('revoked_by').references(() => users.id),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+}, (t) => [
+  uniqueIndex('dossier_access_tokens_hash_unique').on(t.tokenHash),
+  uniqueIndex('dossier_access_tokens_dossier_active_unique').on(t.dossierId).where(sql`state = 'active'`),
+]).enableRLS();
+
+// dossier_access_uses — cada intento de uso del enlace, otorgado o no (HU-010)
+export const dossierAccessUses = pgTable('dossier_access_uses', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  accessTokenId: uuid('access_token_id').references(() => dossierAccessTokens.id), // null si el token ni siquiera existía
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
+  ipAddress: text('ip_address').notNull(),
+  userAgent: text('user_agent').notNull(),
+  result: text('result', { enum: ['granted', 'denied'] }).notNull(),
+  denialReason: text('denial_reason'),
+}).enableRLS();
+
+// dossier_access_otp_codes — códigos de un solo uso (HU-010)
+export const dossierAccessOtpCodes = pgTable('dossier_access_otp_codes', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  accessTokenId: uuid('access_token_id').notNull().references(() => dossierAccessTokens.id),
+  codeHash: text('code_hash').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS();
 

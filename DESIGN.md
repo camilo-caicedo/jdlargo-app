@@ -53,3 +53,24 @@ UI copy, browser/laptop mockup frames around real screens.
 This document is visual only. It does not change: RLS/multi-tenant rules, the
 `src/server/` module boundary, Server Action scope, or any data contract. A screen that
 looks right but reads `organization_id` without the propagated user context is still wrong.
+
+## Portal de la contraparte
+
+Superficie pública y de una sola tarea (HU-010, HU-011, HU-012, HU-013). Se accede desde
+enlaces de invitación (casi siempre desde dispositivos móviles), sin usuario autenticado en
+Supabase Auth.
+
+- **Layout:** una sola tarjeta centrada (max-w ~440px), fondo neutro, sin barra lateral,
+  sin navegación ni migas de pan que sugieran "estás dentro de una aplicación". Sensación de
+  página de verificación segura de un solo propósito.
+- **Interacción y accesibilidad:** botones primarios con relleno sólido (nunca texto plano
+  haciendo de botón). Estados `disabled` visibles con `cursor-not-allowed` y opacidad reducida.
+  Anillo de foco visible en inputs y botones. Efectos hover sobrios en todos los elementos clickeables.
+- **Estados de carga:** `loading.tsx` presenta un `Skeleton` de la tarjeta completa (no un
+  spinner genérico flotante). Botones de acción deshabilitados con estado de carga mientras corre el
+  Server Action para evitar doble envío.
+- **Mensajes de error:** específicos y orientados a la acción. Si un enlace está expirado,
+  revocado o es inválido, muestra el nombre y correo del responsable interno asignado al expediente
+  para que la contraparte sepa a quién contactar — nunca errores técnicos crudos.
+- **Temas:** compatibilidad con tema claro y oscuro desde el día uno con los mismos tokens zinc/slate.
+
