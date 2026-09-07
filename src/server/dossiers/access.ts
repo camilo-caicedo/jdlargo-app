@@ -11,8 +11,8 @@ export interface IssueAccessLinkInput {
   dossierId: string;
   issuedBy: string;              // exige dossier:edit
   requiresSecondFactor: boolean; // parámetro explícito, no derivado
+  recipientEmail: string;        // obligatorio: destinatario para el enlace y segundo factor
   ttlHours?: number;              // duración configurable; default 72 horas si se omite
-  recipientEmail?: string;        // opcional: destinatario para el correo
 }
 
 export interface AccessLinkDetail {
@@ -21,6 +21,7 @@ export interface AccessLinkDetail {
   rawToken: string;     // se devuelve UNA sola vez, aquí; nunca se puede volver a leer
   expiresAt: Date;
   requiresSecondFactor: boolean;
+  recipientEmail: string;
   state: 'active' | 'expired' | 'revoked' | 'replaced';
 }
 
@@ -123,6 +124,7 @@ export async function issueAccessLink(
         expiresAt,
         state: 'active',
         requiresSecondFactor: input.requiresSecondFactor,
+        recipientEmail: input.recipientEmail.trim().toLowerCase(),
         issuedBy: input.issuedBy,
       })
       .returning();
@@ -140,6 +142,7 @@ export async function issueAccessLink(
           access_token_id: inserted.id,
           dossier_id: input.dossierId,
           requires_second_factor: input.requiresSecondFactor,
+          recipient_email: inserted.recipientEmail,
           expires_at: expiresAt.toISOString(),
         },
       },
@@ -152,6 +155,7 @@ export async function issueAccessLink(
       rawToken,
       expiresAt: inserted.expiresAt,
       requiresSecondFactor: inserted.requiresSecondFactor,
+      recipientEmail: inserted.recipientEmail,
       state: inserted.state as 'active',
     };
   };

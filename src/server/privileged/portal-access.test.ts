@@ -11,7 +11,7 @@ import { seedBaseConfiguration } from '../auth/role-config';
 import { createDraftConfiguration, publishDraftConfiguration } from '../configuration/service';
 import { addCounterpartyType, addRequirement } from '../configuration/requirement-matrix';
 import { createDossierRequest } from '../dossiers/dossier';
-import { issueAccessLink } from '../dossiers/access';
+import { issueAccessLink, revokeAccessLink } from '../dossiers/access';
 import { executeTransition } from '../dossiers/state-machine';
 import {
   resolveAccessToken,
@@ -130,6 +130,7 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
       dossierId: dossier.id,
       issuedBy: analystUser,
       requiresSecondFactor: false,
+      recipientEmail: 'contraparte@portal1.com',
     });
 
     // Resolver token desde el portal público
@@ -198,14 +199,17 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
       dossierId: dossier.id,
       issuedBy: analystUser,
       requiresSecondFactor: false,
+      recipientEmail: 'contraparte@portal2.com',
     });
 
     // Modificar fecha de expiración para simular expirado en el pasado
+    await adminSql`SET app.allow_config_cleanup = 'true'`;
     await adminSql`
       UPDATE public.dossier_access_tokens
       SET expires_at = now() - interval '2 days'
       WHERE id = ${link.id}
     `;
+    await adminSql`RESET app.allow_config_cleanup`;
 
     // Intentar resolver desde portal
     const result = await resolveAccessToken(link.rawToken, {
@@ -266,6 +270,7 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
       dossierId: dossier.id,
       issuedBy: analystUser,
       requiresSecondFactor: true,
+      recipientEmail: 'contraparte@segundofactor.com',
     });
 
     const resolveRes = await resolveAccessToken(link.rawToken, {
@@ -297,5 +302,109 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
     const reuseVerify = await verifyOtpCode(link.id, sentCode);
     expect(reuseVerify.verified).toBe(false);
     expect(reuseVerify.reason).toContain('ya ha sido utilizado');
+  }, 60000);
+
+  it('Escenario: Un enlace revocado o reemplazado no permite acceso y registra el intento', async () => {
+    const adminUser = await createTestAuthUser('admin4@test-hu010-portal.com', 'Admin Portal 4');
+    const opUser = await createTestAuthUser('op4@test-hu010-portal.com', 'Operativo Portal 4');
+    const analystUser = await createTestAuthUser('analyst4@test-hu010-portal.com', 'Analista Portal 4');
+
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'Portal Org 4' });
+    await seedBaseConfiguration(org.id, adminUser);
+    await grantMembership(adminUser, { organizationId: org.id, userId: opUser, role: 'operational_user' });
+    await grantMembership(adminUser, { organizationId: org.id, userId: analystUser, role: 'compliance_analyst' });
+
+    const draft = await createDraftConfiguration({
+      organizationId: org.id,
+      standard: 'SARLAFT',
+      rolesConfig: [
+        { code: 'operational_user', name: 'Usuario operativo', permissions: ['dossier:create', 'dossier:view', 'document:upload'] },
+        { code: 'compliance_analyst', name: 'Analista de Cumplimiento', permissions: ['dossier:view', 'dossier:edit', 'dossier:review', 'dossier:export', 'document:view', 'document:review', 'alert:view', 'alert:resolve', 'audit:view', 'configuration:view'] },
+        { code: 'admin', name: 'Administrador', permissions: ['configuration:view', 'configuration:publish', 'configuration:administer', 'memberships:manage', 'audit:view'] },
+      ],
+    });
+    const typeRes = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor', nature: 'legal_entity' });
+    await addRequirement({ organizationId: org.id, configurationVersionId: draft.versionId, counterpartyTypeId: typeRes.id, standard: 'SARLAFT', type: 'field', key: 'tax_id', mandatory: 'always', validation: { dataType: 'string' } });
+    await publishDraftConfiguration({ organizationId: org.id, versionId: draft.versionId, publishedBy: adminUser, reason: 'Config 4' });
+
+    const dossier = await createDossierRequest({
+      organizationId: org.id,
+      requestedBy: opUser,
+      counterpartyTypeName: 'proveedor',
+      party: { identificationType: 'NIT', identificationNumber: '901888004-4', declaredName: 'Proveedor Revocado y Reemplazado S.A.S.' },
+      internalOwnerId: analystUser,
+    });
+
+    // 1. Probar rama 'revoked'
+    const linkRevoked = await issueAccessLink({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      issuedBy: analystUser,
+      requiresSecondFactor: false,
+      recipientEmail: 'revoked@portal.com',
+    });
+
+    await revokeAccessLink({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      revokedBy: analystUser,
+    });
+
+    const revokedResult = await resolveAccessToken(linkRevoked.rawToken, {
+      ipAddress: '186.20.10.1',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    });
+
+    expect(revokedResult.outcome).toBe('denied');
+    expect(revokedResult.denialReason).toBe('revoked');
+
+    // Confirmar que se registró en dossier_access_uses
+    const [revokedUse] = await adminSql<{ result: string; denial_reason: string }[]>`
+      SELECT result, denial_reason FROM public.dossier_access_uses
+      WHERE access_token_id = ${linkRevoked.id}
+    `;
+    expect(revokedUse.result).toBe('denied');
+    expect(revokedUse.denial_reason).toBe('revoked');
+
+    // 2. Probar rama 'replaced'
+    const link1 = await issueAccessLink({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      issuedBy: analystUser,
+      requiresSecondFactor: false,
+      recipientEmail: 'replaced@portal.com',
+    });
+
+    // Al emitir link2, link1 pasa atómicamente a 'replaced'
+    const link2 = await issueAccessLink({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      issuedBy: analystUser,
+      requiresSecondFactor: false,
+      recipientEmail: 'active@portal.com',
+    });
+
+    const replacedResult = await resolveAccessToken(link1.rawToken, {
+      ipAddress: '186.20.10.2',
+      userAgent: 'Mozilla/5.0 (Macintosh)',
+    });
+
+    expect(replacedResult.outcome).toBe('denied');
+    expect(replacedResult.denialReason).toBe('replaced');
+
+    // Confirmar que se registró en dossier_access_uses
+    const [replacedUse] = await adminSql<{ result: string; denial_reason: string }[]>`
+      SELECT result, denial_reason FROM public.dossier_access_uses
+      WHERE access_token_id = ${link1.id}
+    `;
+    expect(replacedUse.result).toBe('denied');
+    expect(replacedUse.denial_reason).toBe('replaced');
+
+    // Y el nuevo enlace link2 sí resuelve granted
+    const activeResult = await resolveAccessToken(link2.rawToken, {
+      ipAddress: '186.20.10.3',
+      userAgent: 'Mozilla/5.0 (Linux)',
+    });
+    expect(activeResult.outcome).toBe('granted');
   }, 60000);
 });

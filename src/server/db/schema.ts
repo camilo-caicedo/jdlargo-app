@@ -231,6 +231,7 @@ export const dossierAccessTokens = pgTable('dossier_access_tokens', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   state: text('state', { enum: ['active', 'expired', 'revoked', 'replaced'] }).notNull().default('active'),
   requiresSecondFactor: boolean('requires_second_factor').notNull().default(false),
+  recipientEmail: text('recipient_email').notNull(),
   issuedBy: uuid('issued_by').notNull().references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   revokedBy: uuid('revoked_by').references(() => users.id),

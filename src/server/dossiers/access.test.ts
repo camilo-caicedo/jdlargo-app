@@ -294,6 +294,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
       dossierId: dossier.id,
       issuedBy: analystUser,
       requiresSecondFactor: false,
+      recipientEmail: 'contacto@reemplazo.com',
     });
 
     // Emitir enlace 2 (reemplazo)
@@ -302,6 +303,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
       dossierId: dossier.id,
       issuedBy: analystUser,
       requiresSecondFactor: true,
+      recipientEmail: 'contacto@reemplazo.com',
     });
 
     expect(link1.id).not.toBe(link2.id);
@@ -426,6 +428,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
       dossierId: dossier.id,
       issuedBy: analystUser,
       requiresSecondFactor: false,
+      recipientEmail: 'contacto@revocacion.com',
     });
 
     // Revocar enlace

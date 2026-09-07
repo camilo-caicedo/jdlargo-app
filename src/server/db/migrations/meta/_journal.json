@@ -99,6 +99,13 @@
       "when": 1788808629734,
       "tag": "0013_dossier_access",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788810000000,
+      "tag": "0014_dossier_access_immutability",
+      "breakpoints": true
     }
   ]
 }

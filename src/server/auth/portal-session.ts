@@ -1,6 +1,12 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
-const secret = process.env.PORTAL_SESSION_SECRET || 'fallback_dev_secret_replace_in_production_32b';
+const secretEnv = process.env.PORTAL_SESSION_SECRET || (process.env.NODE_ENV === 'test' ? 'test_portal_session_secret_32bytes_long' : undefined);
+
+if (!secretEnv) {
+  throw new Error('PORTAL_SESSION_SECRET must be defined in environment variables');
+}
+
+const secret: string = secretEnv;
 
 export interface PortalSessionData {
   accessTokenId: string;

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from 'sonner';
 import { verifyPortalOtp } from './actions';
 
 interface OtpFormProps {
@@ -38,15 +39,20 @@ export function OtpForm({ accessTokenId }: OtpFormProps) {
     try {
       const res = await verifyPortalOtp(accessTokenId, values.code);
       if (!res.success) {
-        setServerError(res.error || 'Código incorrecto');
+        const errMsg = res.error || 'Código incorrecto';
+        setServerError(errMsg);
+        toast.error(errMsg);
         setIsSubmitting(false);
         return;
       }
 
+      toast.success('Código verificado correctamente');
       // Success: reload the server component to proceed into the dossier view
       router.refresh();
     } catch {
-      setServerError('Ocurrió un error al verificar el código. Intente de nuevo.');
+      const errMsg = 'Ocurrió un error al verificar el código. Intente de nuevo.';
+      setServerError(errMsg);
+      toast.error(errMsg);
       setIsSubmitting(false);
     }
   };
