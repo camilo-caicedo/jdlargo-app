@@ -8,7 +8,22 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createDossierAction, type CreateDossierFormState } from '../actions';
-import { FolderPlus, ArrowLeft, Loader2, KeyRound } from 'lucide-react';
+import { FolderPlus, ArrowLeft, Loader2 } from 'lucide-react';
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from '@/components/ui/combobox';
+
+const DOC_TYPES = [
+  { value: 'NIT', label: 'NIT - Número de Identificación Tributaria' },
+  { value: 'CC', label: 'CC - Cédula de Ciudadanía' },
+  { value: 'CE', label: 'CE - Cédula de Extranjería' },
+  { value: 'PP', label: 'Pasaporte' },
+];
 
 interface NewDossierFormProps {
   organizationId: string;
@@ -34,6 +49,41 @@ export function NewDossierForm({
   );
 
   const [sendInviteNow, setSendInviteNow] = React.useState(true);
+
+  // Combobox states
+  const [docType, setDocType] = React.useState('NIT');
+  const selectedDocType = React.useMemo(
+    () => DOC_TYPES.find((d) => d.value === docType) || DOC_TYPES[0],
+    [docType]
+  );
+
+  const cpItems = React.useMemo(
+    () =>
+      counterpartyTypes.map((t) => ({
+        value: t.name,
+        label: `${t.name.toUpperCase()} (${t.nature === 'legal_entity' ? 'Persona Jurídica' : 'Persona Natural'})`,
+      })),
+    [counterpartyTypes]
+  );
+  const [cpType, setCpType] = React.useState(counterpartyTypes[0]?.name || '');
+  const selectedCpItem = React.useMemo(
+    () => cpItems.find((c) => c.value === cpType) || cpItems[0] || null,
+    [cpItems, cpType]
+  );
+
+  const memberItems = React.useMemo(
+    () =>
+      members.map((m) => ({
+        value: m.id,
+        label: `${m.name} (${m.email})`,
+      })),
+    [members]
+  );
+  const [ownerId, setOwnerId] = React.useState(activeUserId);
+  const selectedMemberItem = React.useMemo(
+    () => memberItems.find((m) => m.value === ownerId) || memberItems[0] || null,
+    [memberItems, ownerId]
+  );
 
   return (
     <form action={formAction} className="space-y-6">
@@ -61,19 +111,29 @@ export function NewDossierForm({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="identificationType">Tipo de documento *</Label>
-            <select
-              id="identificationType"
-              name="identificationType"
-              required
+            <input type="hidden" name="identificationType" value={docType} />
+            <Combobox
+              items={DOC_TYPES}
+              value={selectedDocType}
+              onValueChange={(val) => {
+                if (val) setDocType(val.value);
+              }}
+              itemToStringLabel={(item) => item?.label ?? ''}
+              isItemEqualToValue={(a, b) => a?.value === b?.value}
               disabled={isPending}
-              defaultValue="NIT"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-900"
             >
-              <option value="NIT">NIT - Número de Identificación Tributaria</option>
-              <option value="CC">CC - Cédula de Ciudadanía</option>
-              <option value="CE">CE - Cédula de Extranjería</option>
-              <option value="PP">Pasaporte</option>
-            </select>
+              <ComboboxInput placeholder="Seleccionar tipo..." />
+              <ComboboxContent>
+                <ComboboxEmpty>No se encontraron tipos.</ComboboxEmpty>
+                <ComboboxList>
+                  {(item: { value: string; label: string }) => (
+                    <ComboboxItem key={item.value} value={item}>
+                      {item.label}
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
           </div>
 
           <div className="sm:col-span-2 space-y-1.5">
@@ -106,20 +166,29 @@ export function NewDossierForm({
 
         <div className="space-y-1.5">
           <Label htmlFor="counterpartyTypeName">Tipo de contraparte en el sistema *</Label>
-          <select
-            id="counterpartyTypeName"
-            name="counterpartyTypeName"
-            required
+          <input type="hidden" name="counterpartyTypeName" value={cpType} />
+          <Combobox
+            items={cpItems}
+            value={selectedCpItem}
+            onValueChange={(val) => {
+              if (val) setCpType(val.value);
+            }}
+            itemToStringLabel={(item) => item?.label ?? ''}
+            isItemEqualToValue={(a, b) => a?.value === b?.value}
             disabled={isPending}
-            defaultValue={counterpartyTypes[0]?.name || ''}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-900"
           >
-            {counterpartyTypes.map((t) => (
-              <option key={t.id} value={t.name}>
-                {t.name.toUpperCase()} ({t.nature === 'legal_entity' ? 'Persona Jurídica' : 'Persona Natural'})
-              </option>
-            ))}
-          </select>
+            <ComboboxInput placeholder="Seleccionar o buscar tipo..." />
+            <ComboboxContent>
+              <ComboboxEmpty>No se encontraron tipos de contraparte.</ComboboxEmpty>
+              <ComboboxList>
+                {(item: { value: string; label: string }) => (
+                  <ComboboxItem key={item.value} value={item}>
+                    {item.label}
+                  </ComboboxItem>
+                )}
+              </ComboboxList>
+            </ComboboxContent>
+          </Combobox>
           <p className="text-[11px] text-zinc-500">
             Determina la matriz de requisitos documentales y de formulario que se le exigirán.
           </p>
@@ -134,20 +203,29 @@ export function NewDossierForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="internalOwnerId">Responsable interno *</Label>
-            <select
-              id="internalOwnerId"
-              name="internalOwnerId"
-              required
+            <input type="hidden" name="internalOwnerId" value={ownerId} />
+            <Combobox
+              items={memberItems}
+              value={selectedMemberItem}
+              onValueChange={(val) => {
+                if (val) setOwnerId(val.value);
+              }}
+              itemToStringLabel={(item) => item?.label ?? ''}
+              isItemEqualToValue={(a, b) => a?.value === b?.value}
               disabled={isPending}
-              defaultValue={activeUserId}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-900"
             >
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.email})
-                </option>
-              ))}
-            </select>
+              <ComboboxInput placeholder="Buscar por nombre o correo..." />
+              <ComboboxContent>
+                <ComboboxEmpty>No se encontraron miembros.</ComboboxEmpty>
+                <ComboboxList>
+                  {(item: { value: string; label: string }) => (
+                    <ComboboxItem key={item.value} value={item}>
+                      {item.label}
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
           </div>
 
           <div className="space-y-1.5">
@@ -166,7 +244,7 @@ export function NewDossierForm({
       <div className="space-y-4 pt-2">
         <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2">
           <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            3. Enlace de acceso a la contraparte (HU-010)
+            3. Enlace de acceso a la contraparte
           </h3>
           <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-zinc-700 dark:text-zinc-300">
             <input
