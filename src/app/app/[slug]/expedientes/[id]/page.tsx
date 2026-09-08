@@ -1,35 +1,29 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { requireAuthenticatedUserId } from '@/server/auth/session';
-import { listActiveMembershipsForUser } from '@/server/organizations/use-cases';
+import { listActiveMembershipsForUser, listMembers } from '@/server/organizations/use-cases';
 import { checkUserPermission } from '@/server/auth/access-control';
 import { getDossierById, getDossierPendingRequirements } from '@/server/dossiers/dossier';
 import { getActiveAccessLinkForDossier } from '@/server/dossiers/access';
 import { getDossierHistory } from '@/server/dossiers/state-machine';
+import { getConsentForDossier } from '@/server/consent/consent';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { 
-  ArrowLeft, 
-  Clock, 
-  CheckCircle2, 
-  ExternalLink, 
-  Copy, 
-  RefreshCw, 
-  FileText, 
-  ShieldCheck,
-  History,
-  KeyRound
-} from 'lucide-react';
+import { ArrowLeft, History } from 'lucide-react';
 import { AccessLinkBox } from './access-link-box';
+import { ConsentCard } from './consent-card';
+import { EditDossierBox } from './edit-dossier-box';
 
 function getHumanState(state: string) {
   switch (state) {
     case 'borrador': return { label: 'Borrador', color: 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200' };
+    case 'enviada': return { label: 'Enviada', color: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' };
     case 'en_diligenciamiento': return { label: 'En diligenciamiento', color: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300' };
     case 'en_revision': return { label: 'En revisión', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' };
     case 'aprobado': return { label: 'Aprobado', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' };
     case 'rechazado': return { label: 'Rechazado', color: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300' };
+    case 'rechazada_por_contraparte': return { label: 'Rechazada por contraparte', color: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' };
     case 'cancelado': return { label: 'Cancelado', color: 'bg-zinc-100 text-zinc-500' };
+    case 'cerrada': return { label: 'Cerrada', color: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' };
     default: return { label: state, color: 'bg-zinc-100 text-zinc-800' };
   }
 }
@@ -64,12 +58,20 @@ export default async function DossierDetailPage({
     await checkUserPermission(userId, organizationId, 'dossier:edit')
   ).granted;
 
-  // Load requirements & active link & history in parallel
-  const [requirements, activeLink, history] = await Promise.all([
+  // Load requirements & active link & history & consent & members in parallel
+  const [requirements, activeLink, history, consent, rawMembers] = await Promise.all([
     getDossierPendingRequirements(organizationId, id),
     getActiveAccessLinkForDossier(organizationId, id),
     getDossierHistory(organizationId, id),
+    getConsentForDossier(organizationId, id),
+    listMembers(userId, organizationId),
   ]);
+
+  const members = rawMembers.map((m) => ({
+    id: m.user.id,
+    name: m.user.name,
+    email: m.user.email,
+  }));
 
   const stateBadge = getHumanState(dossier.state);
 
@@ -86,9 +88,22 @@ export default async function DossierDetailPage({
           <span className="font-mono font-medium text-zinc-900 dark:text-zinc-100">{dossier.code}</span>
         </div>
 
-        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${stateBadge.color}`}>
-          {stateBadge.label}
-        </span>
+        <div className="flex items-center gap-3">
+          <EditDossierBox
+            organizationId={organizationId}
+            dossierId={dossier.id}
+            slug={slug}
+            state={dossier.state}
+            currentInternalOwnerId={dossier.internalOwnerId || null}
+            currentDeadline={dossier.deadline}
+            members={members}
+            canEdit={canEditDossier}
+          />
+
+          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${stateBadge.color}`}>
+            {stateBadge.label}
+          </span>
+        </div>
       </div>
 
       {/* Main summary header */}
@@ -187,8 +202,11 @@ export default async function DossierDetailPage({
           </Card>
         </div>
 
-        {/* Audit & State history (Right 1 col) */}
+        {/* Audit & State history & Consent (Right 1 col) */}
         <div className="space-y-6">
+          {/* Consent evidence card (HU-011) */}
+          <ConsentCard consent={consent} />
+
           <Card className="shadow-xs">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-1.5">

@@ -87,7 +87,7 @@ export default async function NewDossierPage({
           <CardContent className="space-y-4">
             <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200">
               <AlertDescription className="text-xs">
-                Para abrir un expediente de debida diligencia (HU-008), la organización debe contar con al menos una versión publicada de matriz de requisitos y tipos de contraparte (SARLAFT/PTEE).
+                Para abrir un expediente de debida diligencia, la organización debe contar con al menos una versión publicada de matriz de requisitos y tipos de contraparte (SARLAFT/PTEE).
               </AlertDescription>
             </Alert>
             <Link

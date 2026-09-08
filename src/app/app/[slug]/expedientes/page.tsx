@@ -10,10 +10,8 @@ import {
   FolderKanban, 
   FolderPlus, 
   Clock, 
-  CheckCircle2, 
   FileText, 
   ChevronRight,
-  ShieldAlert
 } from 'lucide-react';
 
 function getStateBadge(state: string) {
@@ -80,7 +78,6 @@ export default async function ExpedientesListPage({
 
   // Metrics breakdown
   const total = dossiers.length;
-  const drafts = dossiers.filter((d) => d.state === 'borrador').length;
   const inProgress = dossiers.filter((d) => d.state === 'en_diligenciamiento').length;
   const inReview = dossiers.filter((d) => d.state === 'en_revision').length;
   const decided = dossiers.filter((d) => ['aprobado', 'rechazado'].includes(d.state)).length;

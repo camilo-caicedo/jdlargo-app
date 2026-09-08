@@ -10,7 +10,8 @@ import {
   Users, 
   LogOut, 
   ShieldCheck,
-  Check
+  Check,
+  FolderKanban
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { signOutAction } from '@/server/auth/actions';
@@ -153,7 +154,7 @@ export function AppNavigationMenu({
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              <FolderKanban className="w-3.5 h-3.5" />
               Expedientes
             </Link>
 
@@ -215,7 +216,7 @@ export function AppNavigationMenu({
                 : 'text-zinc-600 dark:text-zinc-400'
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+            <FolderKanban className="w-3 h-3" />
             Expedientes
           </Link>
           {canManageMembers && (
