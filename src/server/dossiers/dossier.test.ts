@@ -21,7 +21,9 @@ import { withTenantContext } from '../db/client';
 import {
   createDossierRequest,
   getDossierPendingRequirements,
+  updateDossierAdministrativeData,
 } from './dossier';
+import { executeTransition } from './state-machine';
 
 const directUrl = process.env.DIRECT_URL;
 const adminSql = postgres(directUrl || '');
@@ -57,6 +59,7 @@ const TEST_ORG_NAMES = [
   'Beta Ficticia S.A.S.',
   'Permission Org',
   'Party Reuse Org',
+  'HU-061 Edit Org',
 ];
 
 async function cleanupTestData() {
@@ -65,7 +68,7 @@ async function cleanupTestData() {
   await adminSql`
     DELETE FROM public.audit_log
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com')
+       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com')
   `;
   await adminSql`
     DELETE FROM public.assertions
@@ -75,7 +78,7 @@ async function cleanupTestData() {
   await adminSql`
     DELETE FROM public.memberships
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com')
+       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com')
   `;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`
@@ -117,8 +120,8 @@ async function cleanupTestData() {
     DELETE FROM public.organizations
     WHERE name IN ${adminSql(TEST_ORG_NAMES)}
   `;
-  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu008.com'`;
-  await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu008.com'`;
+  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com'`;
+  await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com'`;
   await adminSql`RESET app.allow_config_cleanup`;
 }
 
@@ -699,4 +702,159 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     `;
     expect(Number(partyCount[0].count)).toBe(1);
   }, 60000);
+
+  describe('HU-061: Editar datos administrativos del expediente', () => {
+    it('permite cambiar responsable interno y fecha límite, registra en audit_log, y rechaza si cerrada o sin permisos', async () => {
+      const adminUser = await createTestAuthUser('admin-hu061@test-hu061.com', 'Admin HU061');
+      const analystUser = await createTestAuthUser('analyst-hu061@test-hu061.com', 'Analista HU061');
+      const officerUser = await createTestAuthUser('officer-hu061@test-hu061.com', 'Oficial HU061');
+      const newOwnerUser = await createTestAuthUser('newowner-hu061@test-hu061.com', 'Nuevo Responsable HU061');
+      const auditorUser = await createTestAuthUser('auditor-hu061@test-hu061.com', 'Auditor HU061');
+
+      const org = await createOrganizationWithAdmin(adminUser, { name: 'HU-061 Edit Org' });
+      await seedBaseConfiguration(org.id, adminUser);
+
+      // Grant officer (dossier:approve), analyst (dossier:edit), newOwner (operational_user), auditor (auditor - no edit)
+      await grantMembership(adminUser, {
+        organizationId: org.id,
+        userId: officerUser,
+        role: 'compliance_officer',
+      });
+      await grantMembership(adminUser, {
+        organizationId: org.id,
+        userId: analystUser,
+        role: 'compliance_analyst',
+      });
+      await grantMembership(adminUser, {
+        organizationId: org.id,
+        userId: newOwnerUser,
+        role: 'operational_user',
+      });
+      await grantMembership(adminUser, {
+        organizationId: org.id,
+        userId: auditorUser,
+        role: 'auditor',
+      });
+
+      // Seed draft and publish with counterparty type
+      const draft = await createDraftConfiguration({
+        organizationId: org.id,
+        standard: 'SARLAFT',
+      });
+      const cpType = await addCounterpartyType({
+        organizationId: org.id,
+        configurationVersionId: draft.versionId,
+        name: 'proveedor',
+        nature: 'legal_entity',
+      });
+      await addRequirement({
+        organizationId: org.id,
+        configurationVersionId: draft.versionId,
+        counterpartyTypeId: cpType.id,
+        standard: 'SARLAFT',
+        type: 'field',
+        key: 'tax_id',
+        mandatory: 'always',
+        validation: { dataType: 'string' },
+      });
+      await publishDraftConfiguration({
+        organizationId: org.id,
+        versionId: draft.versionId,
+        publishedBy: adminUser,
+        reason: 'Publicar config HU-061',
+      });
+
+      const initialDeadline = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+      const dossier = await createDossierRequest({
+        organizationId: org.id,
+        requestedBy: analystUser,
+        counterpartyTypeName: 'proveedor',
+        party: {
+          identificationType: 'NIT',
+          identificationNumber: '900111222-3',
+          declaredName: 'Empresa Test HU061 S.A.S.',
+        },
+        internalOwnerId: adminUser,
+        deadline: initialDeadline,
+      });
+
+      expect(dossier.internalOwnerId).toBe(adminUser);
+
+      // 1. Éxito cambiando responsable interno y fecha límite
+      const newDeadline = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+      const updated1 = await updateDossierAdministrativeData({
+        organizationId: org.id,
+        dossierId: dossier.id,
+        updatedBy: analystUser,
+        internalOwnerId: newOwnerUser,
+        deadline: newDeadline,
+      });
+
+      expect(updated1.internalOwnerId).toBe(newOwnerUser);
+      expect(updated1.deadline?.toISOString()).toBe(newDeadline.toISOString());
+
+      // Verificar en audit_log
+      const [auditEntry1] = await adminSql<{ action: string; previous_value: Record<string, unknown>; new_value: Record<string, unknown> }[]>`
+        SELECT action, previous_value, new_value
+        FROM public.audit_log
+        WHERE organization_id = ${org.id}::uuid
+          AND action = 'dossier.updated'
+        ORDER BY occurred_at DESC
+        LIMIT 1
+      `;
+      expect(auditEntry1).toBeDefined();
+      expect(auditEntry1.previous_value.internalOwnerId).toBe(adminUser);
+      expect(auditEntry1.new_value.internalOwnerId).toBe(newOwnerUser);
+
+      // 2. Éxito limpiando fecha límite (null)
+      const updated2 = await updateDossierAdministrativeData({
+        organizationId: org.id,
+        dossierId: dossier.id,
+        updatedBy: analystUser,
+        deadline: null,
+      });
+      expect(updated2.deadline).toBeNull();
+      expect(updated2.internalOwnerId).toBe(newOwnerUser);
+
+      // 3. Rechazo si el nuevo responsable no es miembro activo
+      const nonMemberId = await createTestAuthUser('outsider@test-hu061.com', 'Outsider');
+      await expect(
+        updateDossierAdministrativeData({
+          organizationId: org.id,
+          dossierId: dossier.id,
+          updatedBy: analystUser,
+          internalOwnerId: nonMemberId,
+        }),
+      ).rejects.toThrow(/El responsable interno debe ser un miembro activo de la organización/);
+
+      // 4. Rechazo si no tiene permiso dossier:edit (auditor)
+      await expect(
+        updateDossierAdministrativeData({
+          organizationId: org.id,
+          dossierId: dossier.id,
+          updatedBy: auditorUser,
+          deadline: newDeadline,
+        }),
+      ).rejects.toThrow(/Acción no autorizada: falta el permiso 'dossier:edit'/);
+
+      // 5. Rechazo si el expediente está en estado 'cerrada'
+      // Avanzar: borrador -> enviada -> en_diligenciamiento -> documentos_recibidos -> en_revision -> pendiente_de_decision -> aprobada -> cerrada
+      await executeTransition({ organizationId: org.id, dossierId: dossier.id, toState: 'enviada', actorType: 'user', actorId: adminUser });
+      await executeTransition({ organizationId: org.id, dossierId: dossier.id, toState: 'en_diligenciamiento', actorType: 'user', actorId: adminUser });
+      await executeTransition({ organizationId: org.id, dossierId: dossier.id, toState: 'documentos_recibidos', actorType: 'user', actorId: adminUser });
+      await executeTransition({ organizationId: org.id, dossierId: dossier.id, toState: 'en_revision', actorType: 'user', actorId: adminUser });
+      await executeTransition({ organizationId: org.id, dossierId: dossier.id, toState: 'pendiente_de_decision', actorType: 'user', actorId: adminUser });
+      await executeTransition({ organizationId: org.id, dossierId: dossier.id, toState: 'aprobada', actorType: 'user', actorId: officerUser });
+      await executeTransition({ organizationId: org.id, dossierId: dossier.id, toState: 'cerrada', actorType: 'user', actorId: adminUser });
+
+      await expect(
+        updateDossierAdministrativeData({
+          organizationId: org.id,
+          dossierId: dossier.id,
+          updatedBy: adminUser,
+          deadline: newDeadline,
+        }),
+      ).rejects.toThrow(/Un expediente cerrado no se puede editar/);
+    }, 60000);
+  });
 });

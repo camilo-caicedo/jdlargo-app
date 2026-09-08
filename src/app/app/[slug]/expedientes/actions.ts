@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requireAuthenticatedUserId } from '@/server/auth/session';
-import { createDossierRequest } from '@/server/dossiers/dossier';
+import { createDossierRequest, updateDossierAdministrativeData } from '@/server/dossiers/dossier';
 import { issueAccessLink } from '@/server/dossiers/access';
 
 const createDossierSchema = z.object({
@@ -139,6 +139,66 @@ export async function issueNewAccessLinkAction(
   } catch (err: unknown) {
     return {
       error: err instanceof Error ? err.message : 'Error al emitir el enlace de acceso',
+    };
+  }
+}
+
+const updateDossierSchema = z.object({
+  internalOwnerId: z.string().uuid('Seleccione un responsable interno válido').optional().or(z.literal('')),
+  deadline: z.string().optional(),
+});
+
+export interface UpdateDossierFormState {
+  success?: boolean;
+  error?: string;
+}
+
+export async function updateDossierAction(
+  organizationId: string,
+  dossierId: string,
+  _slug: string,
+  _prevState: UpdateDossierFormState | null,
+  formData: FormData,
+): Promise<UpdateDossierFormState> {
+  const userId = await requireAuthenticatedUserId();
+
+  const rawOwner = formData.get('internalOwnerId');
+  const rawDeadline = formData.get('deadline');
+
+  const parsed = updateDossierSchema.safeParse({
+    internalOwnerId: typeof rawOwner === 'string' ? rawOwner.trim() : undefined,
+    deadline: typeof rawDeadline === 'string' ? rawDeadline.trim() : undefined,
+  });
+
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message || 'Datos de actualización inválidos',
+    };
+  }
+
+  const internalOwnerId = parsed.data.internalOwnerId ? parsed.data.internalOwnerId : undefined;
+  // If deadline field is empty string, user wants to clear it (null); if provided, Date; if undefined, undefined
+  const deadline =
+    parsed.data.deadline === ''
+      ? null
+      : parsed.data.deadline
+        ? new Date(parsed.data.deadline)
+        : undefined;
+
+  try {
+    await updateDossierAdministrativeData({
+      organizationId,
+      dossierId,
+      updatedBy: userId,
+      internalOwnerId,
+      deadline,
+    });
+
+    revalidatePath('/app', 'layout');
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      error: err instanceof Error ? err.message : 'Error al actualizar el expediente',
     };
   }
 }

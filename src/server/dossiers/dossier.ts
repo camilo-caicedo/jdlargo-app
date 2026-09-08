@@ -233,6 +233,166 @@ export async function createDossierRequest(
   return db.transaction(execute);
 }
 
+export interface UpdateDossierAdministrativeDataInput {
+  organizationId: string;
+  dossierId: string;
+  updatedBy: string;
+  internalOwnerId?: string;
+  deadline?: Date | null;
+}
+
+/**
+ * Updates administrative data of a dossier (internalOwnerId, deadline).
+ * Enforces 'dossier:edit' permission, verifies dossier exists and is not 'cerrada',
+ * validates active membership if owner is changed, and logs an audit trail event.
+ */
+export async function updateDossierAdministrativeData(
+  input: UpdateDossierAdministrativeDataInput,
+  txClient?: DrizzleClient,
+): Promise<DossierDetail> {
+  const client = txClient || db;
+
+  // 1. Enforce permission BEFORE modifying so rejections get audited
+  await enforceUserPermission(
+    {
+      userId: input.updatedBy,
+      organizationId: input.organizationId,
+    },
+    'dossier:edit',
+    {
+      dossierId: input.dossierId,
+      internalOwnerId: input.internalOwnerId,
+      deadline: input.deadline ? input.deadline.toISOString() : input.deadline,
+    },
+    txClient,
+  );
+
+  // 2. Fetch existing dossier
+  const [existingDossier] = await client
+    .select()
+    .from(dossiers)
+    .where(
+      and(
+        eq(dossiers.organizationId, input.organizationId),
+        eq(dossiers.id, input.dossierId),
+      ),
+    )
+    .limit(1);
+
+  if (!existingDossier) {
+    throw new Error('Expediente no encontrado');
+  }
+
+  // 3. Dossier in 'cerrada' cannot be modified
+  if (existingDossier.state === 'cerrada') {
+    throw new Error('Un expediente cerrado no se puede editar');
+  }
+
+  // 4. Validate internalOwnerId if provided
+  if (input.internalOwnerId !== undefined) {
+    const [ownerMember] = await client
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.organizationId, input.organizationId),
+          eq(memberships.userId, input.internalOwnerId),
+          eq(memberships.status, 'active'),
+        ),
+      )
+      .limit(1);
+
+    if (!ownerMember) {
+      throw new Error(
+        'El responsable interno debe ser un miembro activo de la organización',
+      );
+    }
+  }
+
+  const execute = async (tx: DatabaseTransaction): Promise<DossierDetail> => {
+    const updates: Partial<{
+      internalOwnerId: string;
+      deadline: Date | null;
+    }> = {};
+
+    const previousValue: Record<string, unknown> = {};
+    const newValue: Record<string, unknown> = {};
+
+    if (
+      input.internalOwnerId !== undefined &&
+      input.internalOwnerId !== existingDossier.internalOwnerId
+    ) {
+      updates.internalOwnerId = input.internalOwnerId;
+      previousValue.internalOwnerId = existingDossier.internalOwnerId;
+      newValue.internalOwnerId = input.internalOwnerId;
+    }
+
+    if (input.deadline !== undefined) {
+      const oldTime = existingDossier.deadline ? existingDossier.deadline.getTime() : null;
+      const newTime = input.deadline ? input.deadline.getTime() : null;
+      if (oldTime !== newTime) {
+        updates.deadline = input.deadline;
+        previousValue.deadline = existingDossier.deadline
+          ? existingDossier.deadline.toISOString()
+          : null;
+        newValue.deadline = input.deadline ? input.deadline.toISOString() : null;
+      }
+    }
+
+    let updated = existingDossier;
+
+    if (Object.keys(updates).length > 0) {
+      const [result] = await tx
+        .update(dossiers)
+        .set(updates)
+        .where(
+          and(
+            eq(dossiers.id, existingDossier.id),
+            eq(dossiers.organizationId, input.organizationId),
+          ),
+        )
+        .returning();
+
+      updated = result;
+
+      await logAuditEvent(
+        {
+          organizationId: input.organizationId,
+          action: 'dossier.updated',
+          entity: 'dossier',
+          entityId: existingDossier.id,
+          actorType: 'user',
+          actorUserId: input.updatedBy,
+          configurationVersionId: existingDossier.configurationVersionId,
+          previousValue,
+          newValue,
+          origin: { actor: 'user', action: 'updateDossierAdministrativeData' },
+        },
+        tx,
+      );
+    }
+
+    return {
+      id: updated.id,
+      code: updated.code!,
+      organizationId: updated.organizationId,
+      partyId: updated.partyId!,
+      counterpartyTypeId: updated.counterpartyTypeId!,
+      standard: updated.standard!,
+      configurationVersionId: updated.configurationVersionId,
+      internalOwnerId: updated.internalOwnerId!,
+      deadline: updated.deadline,
+      state: updated.state,
+      createdAt: updated.createdAt,
+    };
+  };
+
+  if (txClient) {
+    return execute(txClient as DatabaseTransaction);
+  }
+  return db.transaction(execute);
+}
+
 /**
  * Derives pending requirements for a dossier based on the configuration version and counterparty
  * type frozen when the dossier was opened.
@@ -280,6 +440,7 @@ export interface DossierListItem {
   partyDeclaredName: string;
   counterpartyTypeName: string;
   standard: string;
+  internalOwnerId?: string | null;
   internalOwnerName: string | null;
   state: string;
   deadline: Date | null;
@@ -304,6 +465,7 @@ export async function listDossiersForOrganization(
       partyIdentificationNumber: parties.identificationNumber,
       counterpartyTypeName: counterpartyTypes.name,
       standard: dossiers.standard,
+      internalOwnerId: dossiers.internalOwnerId,
       internalOwnerName: users.name,
       state: dossiers.state,
       deadline: dossiers.deadline,
@@ -376,6 +538,7 @@ export async function getDossierById(
       partyIdentificationNumber: parties.identificationNumber,
       counterpartyTypeName: counterpartyTypes.name,
       standard: dossiers.standard,
+      internalOwnerId: dossiers.internalOwnerId,
       internalOwnerName: users.name,
       state: dossiers.state,
       deadline: dossiers.deadline,
@@ -421,6 +584,7 @@ export async function getDossierById(
     partyDeclaredName: nameAssertion?.value ? String(nameAssertion.value) : 'Contraparte',
     counterpartyTypeName: row.counterpartyTypeName || 'Sin tipo',
     standard: row.standard || 'SARLAFT',
+    internalOwnerId: row.internalOwnerId,
     internalOwnerName: row.internalOwnerName,
     state: row.state,
     deadline: row.deadline,
