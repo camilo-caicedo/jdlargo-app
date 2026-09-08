@@ -10,12 +10,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const code = searchParams.get('code');
   const errorParam = searchParams.get('error') || searchParams.get('error_code');
 
+  const errorRedirectBase = type === 'recovery' ? '/recuperar-contrasena' : '/registro';
+
   if (errorParam) {
     console.error('[auth/confirm] Supabase returned error in redirect:', {
       error: errorParam,
       description: searchParams.get('error_description'),
     });
-    const errorUrl = new URL('/registro', request.url);
+    const errorUrl = new URL(errorRedirectBase, request.url);
     errorUrl.searchParams.set('error', 'invalid_token');
     return NextResponse.redirect(errorUrl);
   }
@@ -30,7 +32,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     if (error) {
       console.error('[auth/confirm] OTP verification error:', error);
-      const errorUrl = new URL('/registro', request.url);
+      const errorUrl = new URL(errorRedirectBase, request.url);
       errorUrl.searchParams.set('error', 'invalid_token');
       return NextResponse.redirect(errorUrl);
     }
@@ -39,15 +41,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     if (error) {
       console.error('[auth/confirm] Code exchange error:', error);
-      const errorUrl = new URL('/registro', request.url);
+      const errorUrl = new URL(errorRedirectBase, request.url);
       errorUrl.searchParams.set('error', 'invalid_token');
       return NextResponse.redirect(errorUrl);
     }
   } else {
     console.warn('[auth/confirm] Missing token_hash or code in URL:', request.url);
-    const errorUrl = new URL('/registro', request.url);
+    const errorUrl = new URL(errorRedirectBase, request.url);
     errorUrl.searchParams.set('error', 'missing_token');
     return NextResponse.redirect(errorUrl);
+  }
+
+  // When type === 'recovery', direct user to set a new password screen
+  if (type === 'recovery') {
+    return NextResponse.redirect(new URL('/recuperar-contrasena/nueva', request.url));
   }
 
   // Once OTP is verified, user has an active session in cookies

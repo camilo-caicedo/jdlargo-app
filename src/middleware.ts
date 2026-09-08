@@ -29,10 +29,11 @@ if (redisUrl && redisToken) {
 }
 
 export async function middleware(request: NextRequest) {
-  // Block 1: Rate Limiting for /portal/* (HU-010) and /registro (HU-060)
+  // Block 1: Rate Limiting for /portal/* (HU-010), /registro (HU-060) and /recuperar-contrasena (HU-057)
   if (
     request.nextUrl.pathname.startsWith('/portal') ||
-    request.nextUrl.pathname === '/registro'
+    request.nextUrl.pathname === '/registro' ||
+    request.nextUrl.pathname === '/recuperar-contrasena'
   ) {
     const ip =
       request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
