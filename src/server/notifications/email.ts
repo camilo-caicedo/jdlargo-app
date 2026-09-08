@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 import { AccessLinkEmail } from './emails/access-link';
 import { OtpCodeEmail } from './emails/otp-code';
 import { InvitationEmail } from './emails/invitation';
+import { DossierRejectedEmail } from './emails/dossier-rejected';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -9,7 +10,7 @@ export const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
 // Allow spying/intercepting sent emails in unit tests
 export const mockSentEmails: Array<{
-  type: 'access_link' | 'otp' | 'invitation';
+  type: 'access_link' | 'otp' | 'invitation' | 'dossier_rejected';
   to: string;
   payload: Record<string, unknown>;
 }> = [];
@@ -111,3 +112,41 @@ export async function sendInvitationEmail(input: SendInvitationEmailInput): Prom
     console.error('[sendInvitationEmail] Error sending invitation email via Resend:', error);
   }
 }
+
+export interface SendDossierRejectedEmailInput {
+  to: string;
+  ownerName?: string;
+  dossierCode: string;
+  partyDeclaredName: string;
+  organizationName: string;
+  rejectionReason: string;
+}
+
+export async function sendDossierRejectedEmail(input: SendDossierRejectedEmailInput): Promise<void> {
+  if (process.env.NODE_ENV === 'test' || !resend) {
+    mockSentEmails.push({
+      type: 'dossier_rejected',
+      to: input.to,
+      payload: input as unknown as Record<string, unknown>,
+    });
+    return;
+  }
+
+  try {
+    await resend.emails.send({
+      from: 'JD Largo <notificaciones@jdlargo.com>',
+      to: input.to,
+      subject: `Expediente rechazado por la contraparte (${input.dossierCode})`,
+      react: DossierRejectedEmail({
+        ownerName: input.ownerName,
+        dossierCode: input.dossierCode,
+        partyDeclaredName: input.partyDeclaredName,
+        organizationName: input.organizationName,
+        rejectionReason: input.rejectionReason,
+      }),
+    });
+  } catch (error) {
+    console.error('[sendDossierRejectedEmail] Error sending dossier rejected email via Resend:', error);
+  }
+}
+

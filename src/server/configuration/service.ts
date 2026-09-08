@@ -1,6 +1,6 @@
 import { sql, eq, and, desc, lte } from 'drizzle-orm';
 import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
-import { configurationVersions, roles, rolePermissions } from '../db/schema';
+import { configurationVersions, roles, rolePermissions, privacyNotices } from '../db/schema';
 import type { PermissionKey } from '../auth/permissions';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
@@ -157,6 +157,32 @@ export async function createDraftConfiguration(
             permissionKey: perm,
           })),
         );
+      }
+    }
+
+    // Also inherit privacy notice from active version if present
+    if (activeVersion) {
+      const [activeNotice] = await client
+        .select()
+        .from(privacyNotices)
+        .where(
+          and(
+            eq(privacyNotices.organizationId, input.organizationId),
+            eq(privacyNotices.configurationVersionId, activeVersion.id),
+          ),
+        )
+        .limit(1);
+
+      if (activeNotice) {
+        await client.insert(privacyNotices).values({
+          organizationId: input.organizationId,
+          configurationVersionId: draftVer.id,
+          text: activeNotice.text,
+          purposes: activeNotice.purposes,
+          dataController: activeNotice.dataController,
+          dataProcessor: activeNotice.dataProcessor,
+          rightsChannels: activeNotice.rightsChannels,
+        });
       }
     }
   }

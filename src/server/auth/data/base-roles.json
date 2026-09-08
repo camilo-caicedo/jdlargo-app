@@ -5,6 +5,7 @@
     "description": "Configura la plataforma para su empresa, gestiona usuarios y administra roles",
     "permissions": [
       "dossier:create",
+      "dossier:edit",
       "configuration:view",
       "configuration:publish",
       "configuration:administer",
@@ -39,6 +40,7 @@
     "description": "Revisa expedientes y alertas del día a día",
     "permissions": [
       "dossier:create",
+      "dossier:edit",
       "dossier:view",
       "dossier:review",
       "dossier:export",
@@ -80,6 +82,7 @@
     "description": "Crea solicitudes de vinculación desde su área",
     "permissions": [
       "dossier:create",
+      "dossier:edit",
       "dossier:view",
       "document:upload"
     ]

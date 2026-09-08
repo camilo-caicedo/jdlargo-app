@@ -289,3 +289,33 @@ export const invitations = pgTable('invitations', {
   uniqueIndex('invitations_org_email_pending_unique').on(t.organizationId, t.email).where(sql`state = 'pending'`),
 ]).enableRLS();
 
+// privacy_notices — aviso de privacidad, contenido de una versión de configuración (HU-011)
+export const privacyNotices = pgTable('privacy_notices', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  text: text('text').notNull(),
+  purposes: jsonb('purposes').notNull(), // PrivacyNoticePurpose[]
+  dataController: text('data_controller').notNull(),
+  dataProcessor: text('data_processor').notNull(),
+  rightsChannels: text('rights_channels').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('privacy_notices_org_version_unique').on(t.organizationId, t.configurationVersionId),
+]).enableRLS();
+
+// consents — evidencia inmutable de aceptación/no aceptación del aviso (HU-011)
+export const consents = pgTable('consents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  privacyNoticeId: uuid('privacy_notice_id').notNull().references(() => privacyNotices.id),
+  privacyNoticeTextSnapshot: text('privacy_notice_text_snapshot').notNull(), // copia literal, sobrevive a re-publicaciones
+  result: text('result', { enum: ['accepted', 'not_accepted'] }).notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
+  channel: text('channel').notNull().default('portal'),
+  ipAddress: text('ip_address').notNull(),
+}, (t) => [
+  uniqueIndex('consents_dossier_unique').on(t.dossierId),
+]).enableRLS();
+

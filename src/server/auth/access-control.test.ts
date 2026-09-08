@@ -346,4 +346,24 @@ describe('HU-003: Permisos por rol como configuración de la organización', () 
       ),
     ).rejects.toThrow(/Acción no autorizada/);
   });
+
+  it('Verifica que los roles operativos por defecto cuentan con el permiso dossier:edit', async () => {
+    const operationalRoles = ['admin', 'compliance_analyst', 'operational_user'];
+    for (const code of operationalRoles) {
+      const role = BASE_ROLES_TEMPLATE.find((r) => r.code === code);
+      expect(role).toBeDefined();
+      expect(
+        role?.permissions,
+        `El rol operativo '${code}' debe incluir el permiso 'dossier:edit'`,
+      ).toContain('dossier:edit');
+    }
+
+    // Roles de solo lectura o revisión externa no deben tener dossier:edit
+    const readOnlyRoles = ['reviewer', 'auditor'];
+    for (const code of readOnlyRoles) {
+      const role = BASE_ROLES_TEMPLATE.find((r) => r.code === code);
+      expect(role).toBeDefined();
+      expect(role?.permissions).not.toContain('dossier:edit');
+    }
+  });
 });

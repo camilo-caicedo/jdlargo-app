@@ -77,14 +77,14 @@ async function cleanupTestData() {
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`
     DELETE FROM public.dossier_access_otp_codes
-    WHERE token_id IN (
+    WHERE access_token_id IN (
       SELECT id FROM public.dossier_access_tokens
       WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
     )
   `;
   await adminSql`
     DELETE FROM public.dossier_access_uses
-    WHERE token_id IN (
+    WHERE access_token_id IN (
       SELECT id FROM public.dossier_access_tokens
       WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
     )

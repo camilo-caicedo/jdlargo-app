@@ -69,15 +69,19 @@ async function cleanupTestData() {
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
   await adminSql`
+    DELETE FROM public.consents
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
     DELETE FROM public.dossier_access_otp_codes
-    WHERE token_id IN (
+    WHERE access_token_id IN (
       SELECT id FROM public.dossier_access_tokens
       WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
     )
   `;
   await adminSql`
     DELETE FROM public.dossier_access_uses
-    WHERE token_id IN (
+    WHERE access_token_id IN (
       SELECT id FROM public.dossier_access_tokens
       WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
     )
@@ -119,6 +123,10 @@ async function cleanupTestData() {
   `;
   await adminSql`
     DELETE FROM public.roles
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.privacy_notices
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
   await adminSql`
@@ -295,6 +303,10 @@ describe('HU-002: Aislamiento entre organizaciones con contexto de usuario', () 
         insertSql = `INSERT INTO public.dossier_access_otp_codes (organization_id, dossier_id, access_token_id, code_hash, expires_at) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), 'hash_${userB}', now() + interval '10 minutes')`;
       } else if (tableName === 'invitations') {
         insertSql = `INSERT INTO public.invitations (organization_id, email, role, token_hash, expires_at, invited_by) VALUES ('${orgA.id}', 'cross@test.com', 'compliance_analyst', 'hash_${userB}', now() + interval '7 days', '${userB}')`;
+      } else if (tableName === 'privacy_notices') {
+        insertSql = `INSERT INTO public.privacy_notices (organization_id, configuration_version_id, text, purposes, data_controller, data_processor, rights_channels) VALUES ('${orgA.id}', gen_random_uuid(), 'Aviso', '[]'::jsonb, 'Org', 'Proc', 'rights@test.com')`;
+      } else if (tableName === 'consents') {
+        insertSql = `INSERT INTO public.consents (organization_id, dossier_id, privacy_notice_id, privacy_notice_text_snapshot, result, ip_address) VALUES ('${orgA.id}', gen_random_uuid(), gen_random_uuid(), 'Aviso', 'accepted', '127.0.0.1')`;
       } else {
         insertSql = `INSERT INTO public.${tableName} (organization_id) VALUES ('${orgA.id}')`;
       }

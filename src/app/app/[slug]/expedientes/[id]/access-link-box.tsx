@@ -13,7 +13,6 @@ import {
   Check, 
   ExternalLink, 
   RefreshCw, 
-  ShieldCheck, 
   AlertCircle,
   Loader2 
 } from 'lucide-react';
@@ -67,7 +66,7 @@ export function AccessLinkBox({
         <div className="flex items-center gap-2">
           <KeyRound className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            Enlace de acceso a la debida diligencia (HU-010)
+            Enlace de acceso a la debida diligencia
           </h2>
         </div>
 

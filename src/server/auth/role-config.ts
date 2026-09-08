@@ -89,9 +89,10 @@ export async function publishConfigurationVersion(
         })
         .returning();
 
-      if (roleData.permissions.length > 0) {
+      const uniquePermissions = Array.from(new Set(roleData.permissions));
+      if (uniquePermissions.length > 0) {
         await tx.insert(rolePermissions).values(
-          roleData.permissions.map((permKey) => ({
+          uniquePermissions.map((permKey) => ({
             organizationId: input.organizationId,
             configurationVersionId: newVer.id,
             roleId: newRole.id,

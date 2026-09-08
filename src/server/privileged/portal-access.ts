@@ -17,6 +17,7 @@ export interface ResolveTokenResult {
   denialReason?: 'not_found' | 'expired' | 'revoked' | 'replaced';
   dossierId?: string;
   organizationId?: string;
+  configurationVersionId?: string;
   accessTokenId?: string;
   requiresSecondFactor?: boolean;
   ownerContact?: { name: string; email: string };
@@ -39,6 +40,7 @@ export async function resolveAccessToken(
       id: dossierAccessTokens.id,
       organizationId: dossierAccessTokens.organizationId,
       dossierId: dossierAccessTokens.dossierId,
+      configurationVersionId: dossiers.configurationVersionId,
       state: dossierAccessTokens.state,
       expiresAt: dossierAccessTokens.expiresAt,
       requiresSecondFactor: dossierAccessTokens.requiresSecondFactor,
@@ -109,6 +111,7 @@ export async function resolveAccessToken(
         denialReason,
         dossierId: tokenRecord.dossierId,
         organizationId: tokenRecord.organizationId,
+        configurationVersionId: tokenRecord.configurationVersionId,
         accessTokenId: tokenRecord.id,
         requiresSecondFactor: tokenRecord.requiresSecondFactor,
         ownerContact,

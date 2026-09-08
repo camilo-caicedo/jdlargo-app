@@ -109,7 +109,6 @@ describe('HU-055: Auth Session & Membership Resolution', () => {
       },
     );
     orgAId = orgA.id;
-    const orgASlug = orgA.slug;
 
     // 3. Create organization B where userMultiOrgId is admin
     const orgB = await createOrganizationWithAdmin(

@@ -5,9 +5,12 @@ import {
   ensureEntryTransition,
 } from '@/server/privileged/portal-access';
 import { verifyPortalSession } from '@/server/auth/portal-session';
+import { getConsentForDossier } from '@/server/consent/consent';
+import { getPrivacyNoticeForVersion } from '@/server/configuration/privacy-notice';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { OtpForm } from './otp-form';
+import { PrivacyNoticeForm } from './privacy-notice-form';
 
 export default async function PortalAccessPage({
   params,
@@ -110,6 +113,85 @@ export default async function PortalAccessPage({
   // 3. Granted and (if needed) verified: trigger entry transition to 'en_diligenciamiento'
   if (result.dossierId && result.organizationId) {
     await ensureEntryTransition(result.dossierId, result.organizationId);
+
+    // 4. Privacy Notice Gate (HU-011)
+    const consent = await getConsentForDossier(result.organizationId, result.dossierId);
+
+    if (consent) {
+      if (consent.result === 'not_accepted') {
+        return (
+          <Card className="w-full shadow-sm max-w-xl mx-auto">
+            <CardHeader className="text-center">
+              <CardTitle className="text-red-600 dark:text-red-400">
+                Expediente finalizado
+              </CardTitle>
+              <CardDescription className="mt-2">
+                Usted ha manifestado que no autoriza el tratamiento de datos personales para este expediente.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-center">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                El proceso de debida diligencia se encuentra cerrado por decisión de la contraparte.
+                Si considera que esto es un error o desea autorizar el tratamiento, comuníquese con la organización solicitante.
+              </p>
+              <div className="p-3 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-xs text-zinc-500 font-mono">
+                Registrado el {new Date(consent.occurredAt).toLocaleString()} desde la IP {consent.ipAddress}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      }
+      // If result === 'accepted', proceed to show the HU-012 placeholder
+    } else {
+      // No consent recorded yet: load privacy notice for this dossier's configuration version
+      if (!result.configurationVersionId) {
+        return (
+          <Alert variant="destructive">
+            <AlertTitle>Configuración incompleta</AlertTitle>
+            <AlertDescription>
+              El expediente no tiene una versión de configuración asociada.
+            </AlertDescription>
+          </Alert>
+        );
+      }
+
+      const notice = await getPrivacyNoticeForVersion(
+        result.organizationId,
+        result.configurationVersionId,
+      );
+
+      if (!notice) {
+        return (
+          <Card className="w-full shadow-sm max-w-xl mx-auto">
+            <CardHeader className="text-center">
+              <CardTitle className="text-amber-600 dark:text-amber-400">
+                Aviso de privacidad pendiente
+              </CardTitle>
+              <CardDescription className="mt-2">
+                La organización aún no ha configurado el aviso de privacidad para este estándar de debida diligencia.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center text-sm text-zinc-600 dark:text-zinc-400">
+              Por favor comuníquese con el responsable del expediente para que la entidad publique el aviso correspondiente.
+            </CardContent>
+          </Card>
+        );
+      }
+
+      return (
+        <PrivacyNoticeForm
+          token={token}
+          dossierId={result.dossierId}
+          organizationId={result.organizationId}
+          privacyNoticeId={notice.id}
+          text={notice.text}
+          purposes={notice.purposes}
+          dataController={notice.dataController}
+          dataProcessor={notice.dataProcessor}
+          rightsChannels={notice.rightsChannels}
+        />
+      );
+    }
   }
 
   return (
@@ -124,12 +206,13 @@ export default async function PortalAccessPage({
       </CardHeader>
       <CardContent className="space-y-4 text-center">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Su acceso ha quedado registrado para fines de trazabilidad y auditoría.
+          Su acceso y consentimiento han quedado registrados para fines de trazabilidad y auditoría.
         </p>
         <div className="p-4 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-xs text-zinc-500">
-          El formulario de diligenciamiento estará disponible en la siguiente fase (HU-012).
+          El formulario para el diligenciamiento de información y carga de documentos estará habilitado próximamente.
         </div>
       </CardContent>
     </Card>
   );
 }
+
