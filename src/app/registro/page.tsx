@@ -13,7 +13,7 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
   if (userId) {
     const destination = await resolvePostLoginDestination(userId);
     if (destination.kind === 'single_org') {
-      redirect(`/app/${destination.organizationId}`);
+      redirect(`/app/${destination.slug}`);
     }
     if (destination.kind === 'select_org') {
       redirect('/login/organizacion');

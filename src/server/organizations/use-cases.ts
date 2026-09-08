@@ -186,6 +186,7 @@ export async function revokeMembership(
 export interface ActiveMembershipSummary {
   organizationId: string;
   organizationName: string;
+  slug: string;
 }
 
 /**

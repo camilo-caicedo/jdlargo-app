@@ -14,11 +14,11 @@ export async function selectOrganization(formData: FormData): Promise<void> {
 
   // Strictly validate that user has active membership in requested organization
   const memberships = await listActiveMembershipsForUser(userId);
-  const belongs = memberships.some((m) => m.organizationId === organizationId);
+  const matched = memberships.find((m) => m.organizationId === organizationId || m.slug === organizationId);
 
-  if (!belongs) {
+  if (!matched) {
     redirect('/login/organizacion');
   }
 
-  redirect(`/app/${organizationId}`);
+  redirect(`/app/${matched.slug}`);
 }

@@ -44,7 +44,7 @@ export async function inviteMemberAction(
       email: parsed.data.email,
       role: parsed.data.role,
     });
-    revalidatePath(`/app/${organizationId}/miembros`);
+    revalidatePath('/app', 'layout');
     return {
       success: true,
       message: `Invitación enviada a ${parsed.data.email}`,
@@ -63,7 +63,7 @@ export async function revokeInvitationAction(
 
   try {
     await revokeInvitation(userId, organizationId, invitationId);
-    revalidatePath(`/app/${organizationId}/miembros`);
+    revalidatePath('/app', 'layout');
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Error al revocar la invitación';

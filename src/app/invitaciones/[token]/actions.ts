@@ -9,9 +9,11 @@ import {
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { resolvePostLoginDestination } from '@/server/auth/session';
 
+import { passwordPolicySchema } from '@/lib/auth/password-policy';
+
 const setupAccountSchema = z.object({
   fullName: z.string().min(2, 'El nombre completo debe tener al menos 2 caracteres'),
-  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+  password: passwordPolicySchema,
 });
 
 const loginAndAcceptSchema = z.object({
@@ -69,7 +71,7 @@ export async function acceptAsNewUserAction(
 
   const destination = await resolvePostLoginDestination(createdUserId);
   if (destination.kind === 'single_org') {
-    redirect(`/app/${destination.organizationId}`);
+    redirect(`/app/${destination.slug}`);
   } else if (destination.kind === 'select_org') {
     redirect('/login/organizacion');
   } else {
@@ -124,7 +126,7 @@ export async function acceptForExistingUserAction(
 
   const destination = await resolvePostLoginDestination(authData.user.id);
   if (destination.kind === 'single_org') {
-    redirect(`/app/${destination.organizationId}`);
+    redirect(`/app/${destination.slug}`);
   } else if (destination.kind === 'select_org') {
     redirect('/login/organizacion');
   } else {

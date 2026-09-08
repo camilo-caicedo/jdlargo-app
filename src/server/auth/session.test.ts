@@ -109,6 +109,7 @@ describe('HU-055: Auth Session & Membership Resolution', () => {
       },
     );
     orgAId = orgA.id;
+    const orgASlug = orgA.slug;
 
     // 3. Create organization B where userMultiOrgId is admin
     const orgB = await createOrganizationWithAdmin(
@@ -148,14 +149,16 @@ describe('HU-055: Auth Session & Membership Resolution', () => {
     expect(memberships.length).toBe(1);
     expect(memberships[0].organizationId).toBe(orgAId);
     expect(memberships[0].organizationName).toBe(TEST_ORG_NAMES[0]);
+    expect(memberships[0].slug).toBeTruthy();
   });
 
-  it('resolvePostLoginDestination returns single_org with organizationId for single org user', async () => {
+  it('resolvePostLoginDestination returns single_org with organizationId and slug for single org user', async () => {
     const destination = await resolvePostLoginDestination(userSingleOrgId);
-    expect(destination).toEqual({
-      kind: 'single_org',
-      organizationId: orgAId,
-    });
+    expect(destination.kind).toBe('single_org');
+    if (destination.kind === 'single_org') {
+      expect(destination.organizationId).toBe(orgAId);
+      expect(destination.slug).toBeTruthy();
+    }
   });
 
   it('listActiveMembershipsForUser returns multiple organizations for multi-org user', async () => {

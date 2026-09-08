@@ -67,7 +67,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const destination = await resolvePostLoginDestination(user.id);
 
   if (destination.kind === 'single_org') {
-    return NextResponse.redirect(new URL(`/app/${destination.organizationId}`, request.url));
+    return NextResponse.redirect(new URL(`/app/${destination.slug}`, request.url));
   }
 
   if (destination.kind === 'select_org') {

@@ -1,12 +1,13 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useState, useActionState } from 'react';
 import { acceptAsNewUserAction, type InvitationActionResult } from './actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
+import { PasswordStrengthMeter } from '@/components/auth/password-strength-meter';
 
 interface SetupAccountFormProps {
   token: string;
@@ -15,6 +16,7 @@ interface SetupAccountFormProps {
 }
 
 export function SetupAccountForm({ token, email, organizationName }: SetupAccountFormProps) {
+  const [password, setPassword] = useState('');
   const actionWithToken = acceptAsNewUserAction.bind(null, token);
   const [state, formAction, isPending] = useActionState<InvitationActionResult | null, FormData>(
     actionWithToken,
@@ -67,9 +69,12 @@ export function SetupAccountForm({ token, email, organizationName }: SetupAccoun
           placeholder="Mínimo 8 caracteres"
           required
           minLength={8}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
           disabled={isPending}
         />
+        <PasswordStrengthMeter password={password} />
       </div>
 
       <Button type="submit" className="w-full mt-2" disabled={isPending}>

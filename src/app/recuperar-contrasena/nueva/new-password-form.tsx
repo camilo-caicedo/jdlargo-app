@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
+import { PasswordStrengthMeter } from '@/components/auth/password-strength-meter';
+
 const initialState: SetPasswordState = {
   status: 'idle',
 };
@@ -18,6 +20,7 @@ export function NewPasswordForm() {
     setNewPassword,
     initialState,
   );
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -39,6 +42,8 @@ export function NewPasswordForm() {
             autoComplete="new-password"
             required
             minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             placeholder="Mínimo 8 caracteres"
             disabled={isPending}
             className="pr-10"
@@ -57,6 +62,7 @@ export function NewPasswordForm() {
             )}
           </button>
         </div>
+        <PasswordStrengthMeter password={password} />
       </div>
 
       <div className="space-y-1.5 text-left">

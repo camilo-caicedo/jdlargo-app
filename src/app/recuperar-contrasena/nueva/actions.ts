@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserId, resolvePostLoginDestination } from '@/server/auth/session';
 
+import { passwordPolicySchema } from '@/lib/auth/password-policy';
+
 export interface SetPasswordState {
   status: 'idle' | 'error';
   error?: string;
@@ -22,10 +24,11 @@ export async function setNewPassword(
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
 
-  if (!password || password.length < 8) {
+  const passwordValidation = passwordPolicySchema.safeParse(password);
+  if (!passwordValidation.success) {
     return {
       status: 'error',
-      error: 'La nueva contraseña debe tener al menos 8 caracteres.',
+      error: passwordValidation.error.issues[0]?.message || 'La contraseña no cumple con los requisitos mínimos de seguridad.',
     };
   }
 
@@ -53,7 +56,7 @@ export async function setNewPassword(
   const destination = await resolvePostLoginDestination(userId);
 
   if (destination.kind === 'single_org') {
-    redirect(`/app/${destination.organizationId}`);
+    redirect(`/app/${destination.slug}`);
   }
 
   if (destination.kind === 'select_org') {

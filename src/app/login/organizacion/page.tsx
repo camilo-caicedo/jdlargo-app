@@ -10,7 +10,7 @@ export default async function SelectOrganizationPage() {
   const destination = await resolvePostLoginDestination(userId);
 
   if (destination.kind === 'single_org') {
-    redirect(`/app/${destination.organizationId}`);
+    redirect(`/app/${destination.slug}`);
   }
 
   if (destination.kind === 'no_access') {

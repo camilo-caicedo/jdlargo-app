@@ -5,9 +5,11 @@ import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createOrganizationWithAdmin } from '@/server/organizations/use-cases';
 
+import { passwordPolicySchema } from '@/lib/auth/password-policy';
+
 const registerSchema = z.object({
   email: z.string().email('Ingrese un correo electrónico válido'),
-  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+  password: passwordPolicySchema,
   fullName: z.string().min(2, 'El nombre completo debe tener al menos 2 caracteres'),
   orgName: z.string().min(2, 'El nombre de la organización debe tener al menos 2 caracteres'),
   slug: z.string()

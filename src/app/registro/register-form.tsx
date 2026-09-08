@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { PasswordStrengthMeter } from '@/components/auth/password-strength-meter';
+import { evaluatePasswordStrength } from '@/lib/auth/password-policy';
 
 const initialState: RegisterState = {
   status: 'idle',
@@ -82,8 +84,9 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
       setStep1Error('Ingrese un correo institucional válido.');
       return;
     }
-    if (!password || password.length < 8) {
-      setStep1Error('La contraseña debe tener al menos 8 caracteres.');
+    const strength = evaluatePasswordStrength(password);
+    if (!strength.isValid) {
+      setStep1Error('La contraseña no cumple con todos los requisitos de seguridad.');
       return;
     }
 
@@ -240,6 +243,7 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
                 )}
               </button>
             </div>
+            <PasswordStrengthMeter password={password} />
           </div>
 
           <Button

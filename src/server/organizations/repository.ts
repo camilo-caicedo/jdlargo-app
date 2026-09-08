@@ -45,6 +45,15 @@ export const organizationsRepository = {
     return rows[0] || null;
   },
 
+  async findOrganizationBySlug(tx: Tx, slug: string) {
+    const rows = await tx
+      .select()
+      .from(dbSchema.organizations)
+      .where(eq(dbSchema.organizations.slug, slug))
+      .limit(1);
+    return rows[0] || null;
+  },
+
   async findMembership(tx: Tx, organizationId: string, userId: string) {
     const rows = await tx
       .select()
@@ -123,6 +132,7 @@ export const organizationsRepository = {
       .select({
         organizationId: dbSchema.memberships.organizationId,
         organizationName: dbSchema.organizations.name,
+        slug: dbSchema.organizations.slug,
       })
       .from(dbSchema.memberships)
       .innerJoin(dbSchema.organizations, eq(dbSchema.memberships.organizationId, dbSchema.organizations.id))

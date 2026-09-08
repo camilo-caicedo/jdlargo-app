@@ -67,7 +67,7 @@ export async function signIn(
   }
 
   if (destination.kind === 'single_org') {
-    redirect(`/app/${destination.organizationId}`);
+    redirect(`/app/${destination.slug}`);
   }
 
   redirect('/login/organizacion');

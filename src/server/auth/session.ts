@@ -3,7 +3,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { listActiveMembershipsForUser } from '../organizations/use-cases';
 
 export type PostLoginDestination =
-  | { kind: 'single_org'; organizationId: string }
+  | { kind: 'single_org'; organizationId: string; slug: string }
   | { kind: 'select_org' }
   | { kind: 'no_access' };
 
@@ -43,7 +43,11 @@ export async function resolvePostLoginDestination(
   }
 
   if (memberships.length === 1) {
-    return { kind: 'single_org', organizationId: memberships[0].organizationId };
+    return {
+      kind: 'single_org',
+      organizationId: memberships[0].organizationId,
+      slug: memberships[0].slug,
+    };
   }
 
   return { kind: 'select_org' };

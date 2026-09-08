@@ -1,4 +1,6 @@
+import { redirect } from 'next/navigation';
 import { requireAuthenticatedUserId } from '@/server/auth/session';
+import { listActiveMembershipsForUser } from '@/server/organizations/use-cases';
 import { checkUserPermission } from '@/server/auth/access-control';
 import { getActiveConfiguration } from '@/server/configuration/service';
 import { listPendingInvitations } from '@/server/organizations/invitations';
@@ -11,10 +13,19 @@ import { PendingInvitationsList } from './pending-list';
 export default async function MiembrosPage({
   params,
 }: {
-  params: Promise<{ organizationId: string }>;
+  params: Promise<{ slug: string }>;
 }) {
-  const { organizationId } = await params;
+  const { slug } = await params;
   const userId = await requireAuthenticatedUserId();
+
+  const memberships = await listActiveMembershipsForUser(userId);
+  const currentMembership = memberships.find((m) => m.slug === slug || m.organizationId === slug);
+
+  if (!currentMembership) {
+    redirect('/login/organizacion');
+  }
+
+  const organizationId = currentMembership.organizationId;
 
   // 1. Check permission memberships:manage
   const permCheck = await checkUserPermission(userId, organizationId, 'memberships:manage');
