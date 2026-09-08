@@ -20,6 +20,7 @@ export interface RegisterState {
     email?: string;
     fullName?: string;
     orgName?: string;
+    password?: string;
   };
 }
 
@@ -35,16 +36,18 @@ export async function registerAccount(
   const emailStr = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
   const fullNameStr = typeof rawFullName === 'string' ? rawFullName.trim() : '';
   const orgNameStr = typeof rawOrgName === 'string' ? rawOrgName.trim() : '';
+  const passwordStr = typeof rawPassword === 'string' ? rawPassword : '';
 
   const defaultValues = {
     email: emailStr,
     fullName: fullNameStr,
     orgName: orgNameStr,
+    password: passwordStr,
   };
 
   const parsed = registerSchema.safeParse({
     email: emailStr,
-    password: typeof rawPassword === 'string' ? rawPassword : '',
+    password: passwordStr,
     fullName: fullNameStr,
     orgName: orgNameStr,
   });

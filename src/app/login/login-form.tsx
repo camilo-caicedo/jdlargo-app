@@ -45,6 +45,7 @@ export function LoginForm() {
             type={showPassword ? 'text' : 'password'}
             autoComplete="current-password"
             required
+            defaultValue={state?.defaultPassword}
             placeholder="••••••••"
             disabled={isPending}
             className="pr-10"

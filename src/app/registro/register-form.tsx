@@ -126,6 +126,7 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
             autoComplete="new-password"
             required
             minLength={8}
+            defaultValue={state.defaultValues?.password}
             placeholder="Mínimo 8 caracteres"
             disabled={isPending}
             className="pr-10"

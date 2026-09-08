@@ -14,6 +14,7 @@ export interface SignInActionResult {
   success: boolean;
   error?: string;
   defaultEmail?: string;
+  defaultPassword?: string;
 }
 
 export async function signIn(
@@ -23,10 +24,11 @@ export async function signIn(
   const rawEmail = formData.get('email');
   const rawPassword = formData.get('password');
   const emailStr = typeof rawEmail === 'string' ? rawEmail.trim() : '';
+  const passwordStr = typeof rawPassword === 'string' ? rawPassword : '';
 
   const parsed = signInSchema.safeParse({
     email: emailStr,
-    password: typeof rawPassword === 'string' ? rawPassword : '',
+    password: passwordStr,
   });
 
   if (!parsed.success) {
@@ -34,6 +36,7 @@ export async function signIn(
       success: false,
       error: parsed.error.issues[0]?.message || 'Credenciales inválidas',
       defaultEmail: emailStr,
+      defaultPassword: passwordStr,
     };
   }
 
@@ -48,6 +51,7 @@ export async function signIn(
       success: false,
       error: 'Correo o contraseña incorrectos. Verifique sus credenciales.',
       defaultEmail: emailStr,
+      defaultPassword: passwordStr,
     };
   }
 
@@ -58,6 +62,7 @@ export async function signIn(
       success: false,
       error: 'No tiene acceso a ninguna organización cliente activa.',
       defaultEmail: emailStr,
+      defaultPassword: passwordStr,
     };
   }
 

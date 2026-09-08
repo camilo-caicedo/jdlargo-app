@@ -8,6 +8,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type') as EmailOtpType | null;
   const code = searchParams.get('code');
+  const errorParam = searchParams.get('error') || searchParams.get('error_code');
+
+  if (errorParam) {
+    console.error('[auth/confirm] Supabase returned error in redirect:', {
+      error: errorParam,
+      description: searchParams.get('error_description'),
+    });
+    const errorUrl = new URL('/registro', request.url);
+    errorUrl.searchParams.set('error', 'invalid_token');
+    return NextResponse.redirect(errorUrl);
+  }
 
   const supabase = await createSupabaseServerClient();
 
