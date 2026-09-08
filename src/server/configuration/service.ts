@@ -5,6 +5,7 @@ import type { PermissionKey } from '../auth/permissions';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
 import { assertRequirementMatrixIsComplete } from './requirement-matrix';
+import { BASE_ROLES_TEMPLATE } from '../auth/role-config';
 
 export interface DraftRoleInput {
   code: string;
@@ -126,29 +127,36 @@ export async function createDraftConfiguration(
   } else {
     // If no rolesConfig is specified, inherit from currently active published version (or template)
     const activeVersion = await getActiveConfiguration(input.organizationId, client);
-    if (activeVersion && activeVersion.roles.length > 0) {
-      for (const roleData of activeVersion.roles) {
-        const [newRole] = await client
-          .insert(roles)
-          .values({
+    const rolesToApply = activeVersion && activeVersion.roles.length > 0
+      ? activeVersion.roles
+      : BASE_ROLES_TEMPLATE.map((r) => ({
+          code: r.code,
+          name: r.name,
+          description: r.description,
+          permissions: [...r.permissions],
+        }));
+
+    for (const roleData of rolesToApply) {
+      const [newRole] = await client
+        .insert(roles)
+        .values({
+          organizationId: input.organizationId,
+          configurationVersionId: draftVer.id,
+          name: roleData.name,
+          code: roleData.code,
+          description: roleData.description || null,
+        })
+        .returning();
+
+      if (roleData.permissions.length > 0) {
+        await client.insert(rolePermissions).values(
+          roleData.permissions.map((perm) => ({
             organizationId: input.organizationId,
             configurationVersionId: draftVer.id,
-            name: roleData.name,
-            code: roleData.code,
-            description: roleData.description || null,
-          })
-          .returning();
-
-        if (roleData.permissions.length > 0) {
-          await client.insert(rolePermissions).values(
-            roleData.permissions.map((perm) => ({
-              organizationId: input.organizationId,
-              configurationVersionId: draftVer.id,
-              roleId: newRole.id,
-              permissionKey: perm,
-            })),
-          );
-        }
+            roleId: newRole.id,
+            permissionKey: perm,
+          })),
+        );
       }
     }
   }

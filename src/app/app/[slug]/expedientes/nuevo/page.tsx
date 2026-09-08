@@ -105,6 +105,41 @@ export default async function NewDossierPage({
 
   // 3. Load counterparty types and organization members
   const counterpartyTypes = await listCounterpartyTypes(organizationId, activeConfig.id);
+
+  if (counterpartyTypes.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto mt-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Settings2 className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              <div>
+                <CardTitle>Tipos de contraparte requeridos</CardTitle>
+                <CardDescription>
+                  La versión actual no tiene tipos de contraparte definidos en su matriz.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200">
+              <AlertDescription className="text-xs">
+                Para registrar una solicitud debe existir al menos un tipo de contraparte configurado (ej: Proveedor, Cliente o Empleado) en la versión de cumplimiento activa.
+              </AlertDescription>
+            </Alert>
+            <Link
+              href={`/app/${slug}/expedientes`}
+              className="text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 inline-flex items-center gap-1.5"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Volver a expedientes
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const rawMembers = await listMembers(userId, organizationId);
   const members = rawMembers.map((m) => ({
     id: m.user.id,

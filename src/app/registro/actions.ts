@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createOrganizationWithAdmin } from '@/server/organizations/use-cases';
+import { seedBaseConfiguration } from '@/server/auth/role-config';
 
 import { passwordPolicySchema } from '@/lib/auth/password-policy';
 
@@ -129,7 +130,10 @@ export async function registerAccount(
 
   try {
     // Create organization and set user as administrator
-    await createOrganizationWithAdmin(newUserId, { name: orgName, slug });
+    const newOrg = await createOrganizationWithAdmin(newUserId, { name: orgName, slug });
+
+    // Initialize base configuration version with roles and permissions (§30, HU-003)
+    await seedBaseConfiguration(newOrg.id, newUserId);
   } catch (err: unknown) {
     console.error('[registerAccount] Error creating organization for new user:', err);
     if (err && typeof err === 'object' && 'code' in err && err.code === 'DUPLICATE_ORG_SLUG') {

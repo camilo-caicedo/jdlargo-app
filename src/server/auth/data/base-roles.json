@@ -4,6 +4,7 @@
     "name": "Administrador",
     "description": "Configura la plataforma para su empresa, gestiona usuarios y administra roles",
     "permissions": [
+      "dossier:create",
       "configuration:view",
       "configuration:publish",
       "configuration:administer",
@@ -16,6 +17,7 @@
     "name": "Oficial de Cumplimiento",
     "description": "Responsable legal del proceso. Aprueba o rechaza expedientes, alertas y metodología",
     "permissions": [
+      "dossier:create",
       "dossier:view",
       "dossier:review",
       "dossier:approve",
@@ -36,6 +38,7 @@
     "name": "Analista de Cumplimiento",
     "description": "Revisa expedientes y alertas del día a día",
     "permissions": [
+      "dossier:create",
       "dossier:view",
       "dossier:review",
       "dossier:export",
