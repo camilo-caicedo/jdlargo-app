@@ -11,7 +11,7 @@ export interface PasswordRulesBreakdown {
 }
 
 export const MIN_PASSWORD_LENGTH = 8;
-export const SPECIAL_CHARS_REGEX = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/;
+export const SPECIAL_CHARS_REGEX = /[^a-zA-Z0-9]/;
 
 export function evaluatePasswordStrength(password: string): PasswordRulesBreakdown {
   const pwd = password || '';
@@ -53,5 +53,5 @@ export const passwordPolicySchema = z
     message: 'Debe contener al menos un número',
   })
   .refine((val) => SPECIAL_CHARS_REGEX.test(val), {
-    message: 'Debe contener al menos un carácter especial (!@#$%^&*...)',
+    message: 'Debe contener un carácter que no sea letra ni número (incluye tildes o espacios)',
   });

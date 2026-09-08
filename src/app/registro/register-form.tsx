@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { PasswordStrengthMeter } from '@/components/auth/password-strength-meter';
+import { PasswordRequirementsList } from '@/components/auth/password-requirements-list';
 import { evaluatePasswordStrength } from '@/lib/auth/password-policy';
 
 const initialState: RegisterState = {
@@ -36,11 +36,13 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
   const [state, formAction, isPending] = useActionState(registerAccount, initialState);
   const [step, setStep] = useState<'account' | 'organization'>('account');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Form field state to guarantee persistent values across wizard navigation
   const [fullName, setFullName] = useState(state.defaultValues?.fullName || '');
   const [email, setEmail] = useState(state.defaultValues?.email || '');
   const [password, setPassword] = useState(state.defaultValues?.password || '');
+  const [confirmPassword, setConfirmPassword] = useState(state.defaultValues?.password || '');
   const [orgName, setOrgName] = useState(state.defaultValues?.orgName || '');
   const [slug, setSlug] = useState(state.defaultValues?.slug || '');
   const [slugEditedManually, setSlugEditedManually] = useState(false);
@@ -87,6 +89,10 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
     const strength = evaluatePasswordStrength(password);
     if (!strength.isValid) {
       setStep1Error('La contraseña no cumple con todos los requisitos de seguridad.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setStep1Error('Las contraseñas no coinciden. Verifique la confirmación.');
       return;
     }
 
@@ -225,9 +231,13 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
                 minLength={8}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Mínimo 8 caracteres"
+                placeholder="Crea una contraseña segura"
                 disabled={isPending}
-                className="pr-10"
+                className={`pr-10 ${
+                  password.length > 0 && !evaluatePasswordStrength(password).isValid
+                    ? 'border-red-500 focus-visible:ring-red-500/30'
+                    : ''
+                }`}
               />
               <button
                 type="button"
@@ -243,7 +253,46 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
                 )}
               </button>
             </div>
-            <PasswordStrengthMeter password={password} />
+            <PasswordRequirementsList password={password} />
+          </div>
+
+          <div className="space-y-1.5 text-left">
+            <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repite tu contraseña"
+                disabled={isPending}
+                className={`pr-10 ${
+                  confirmPassword.length > 0 && password !== confirmPassword
+                    ? 'border-red-500 focus-visible:ring-red-500/30'
+                    : ''
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                disabled={isPending}
+                aria-label={showConfirmPassword ? 'Ocultar confirmación' : 'Ver confirmación'}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+              >
+                {showConfirmPassword ? (
+                  <EyeOff className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
+            {confirmPassword.length > 0 && password !== confirmPassword && (
+              <p className="text-xs text-red-600 dark:text-red-400">
+                Las contraseñas no coinciden.
+              </p>
+            )}
           </div>
 
           <Button

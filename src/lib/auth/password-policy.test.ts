@@ -63,7 +63,7 @@ describe('Password Policy', () => {
       const parsed = passwordPolicySchema.safeParse('Password1234');
       expect(parsed.success).toBe(false);
       if (!parsed.success) {
-        expect(parsed.error.issues[0].message).toContain('carácter especial');
+        expect(parsed.error.issues[0].message).toContain('carácter que no sea letra ni número');
       }
     });
 
