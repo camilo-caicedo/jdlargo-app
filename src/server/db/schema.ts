@@ -13,11 +13,14 @@ export const users = pgTable('users', {
 export const organizations = pgTable('organizations', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: text('name').notNull(),
+  slug: text('slug').notNull(),
   taxId: text('tax_id').unique(),
   status: text('status', { enum: ['active', 'suspended'] }).notNull().default('active'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-}).enableRLS();
+}, (t) => [
+  uniqueIndex('organizations_slug_unique').on(t.slug),
+]).enableRLS();
 
 // memberships
 export const memberships = pgTable('memberships', {

@@ -76,6 +76,7 @@ describe('HU-001: Organizaciones, cuentas de usuario y pertenencia', () => {
     const origin = { ip: '127.0.0.1', userAgent: 'vitest' };
     const org = await createOrganizationWithAdmin(userId, {
       name: 'Transportes Ficticios S.A.S.',
+      slug: 'transportes-ficticios',
       taxId: '900.123.456-1',
       origin,
     });
@@ -83,6 +84,7 @@ describe('HU-001: Organizaciones, cuentas de usuario y pertenencia', () => {
     expect(org).toBeDefined();
     expect(org.id).toBeDefined();
     expect(org.name).toBe('Transportes Ficticios S.A.S.');
+    expect(org.slug).toBe('transportes-ficticios');
 
     // Verificar que el usuario queda como miembro con rol 'admin'
     const members = await listMembers(userId, org.id);
@@ -107,8 +109,8 @@ describe('HU-001: Organizaciones, cuentas de usuario y pertenencia', () => {
     const adminB = await createTestAuthUser('admin-b@test-hu001.com', 'Admin Beta');
     const consultant = await createTestAuthUser('consultant@test-hu001.com', 'Consultor Externo');
 
-    const orgAlfa = await createOrganizationWithAdmin(adminA, { name: 'Alfa Ficticia S.A.S.' });
-    const orgBeta = await createOrganizationWithAdmin(adminB, { name: 'Beta Ficticia S.A.S.' });
+    const orgAlfa = await createOrganizationWithAdmin(adminA, { name: 'Alfa Ficticia S.A.S.', slug: 'alfa-ficticia' });
+    const orgBeta = await createOrganizationWithAdmin(adminB, { name: 'Beta Ficticia S.A.S.', slug: 'beta-ficticia' });
 
     // Se le otorga membresía en Alfa con compliance_analyst y en Beta con auditor
     const memAlfa = await grantMembership(adminA, {
@@ -135,7 +137,7 @@ describe('HU-001: Organizaciones, cuentas de usuario y pertenencia', () => {
   it('Escenario: Autenticarse no otorga por sí solo acceso a ninguna organización cliente', async () => {
     const standaloneUser = await createTestAuthUser('lonely@test-hu001.com', 'Usuario Sin Membresía');
     const adminUser = await createTestAuthUser('org-owner@test-hu001.com', 'Org Owner');
-    const org = await createOrganizationWithAdmin(adminUser, { name: 'Empresa Privada S.A.S.' });
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'Empresa Privada S.A.S.', slug: 'empresa-privada' });
 
     // Intento de leer miembros con contexto de usuario sin membresía
     await expect(listMembers(standaloneUser, org.id)).rejects.toThrow();
@@ -154,8 +156,8 @@ describe('HU-001: Organizaciones, cuentas de usuario y pertenencia', () => {
     const userAlfaAdmin = await createTestAuthUser('alfa-admin@test-hu001.com', 'Alfa Admin');
     const userBetaAdmin = await createTestAuthUser('beta-admin@test-hu001.com', 'Beta Admin');
 
-    const orgAlfa = await createOrganizationWithAdmin(userAlfaAdmin, { name: 'Alfa Org' });
-    const orgBeta = await createOrganizationWithAdmin(userBetaAdmin, { name: 'Beta Org' });
+    const orgAlfa = await createOrganizationWithAdmin(userAlfaAdmin, { name: 'Alfa Org', slug: 'alfa-org' });
+    const orgBeta = await createOrganizationWithAdmin(userBetaAdmin, { name: 'Beta Org', slug: 'beta-org' });
 
     // Consulta miembros de Alfa con contexto de userAlfaAdmin -> solo ve Alfa
     const membersAlfa = await listMembers(userAlfaAdmin, orgAlfa.id);
@@ -176,11 +178,41 @@ describe('HU-001: Organizaciones, cuentas de usuario y pertenencia', () => {
     ).rejects.toThrow();
   });
 
+  it('Escenario: El slug de la organización debe ser único en la plataforma', async () => {
+    const user1 = await createTestAuthUser('slug-admin1@test-hu001.com', 'Slug Admin 1');
+    const user2 = await createTestAuthUser('slug-admin2@test-hu001.com', 'Slug Admin 2');
+
+    // Primera organización con slug 'mi-empresa'
+    const org1 = await createOrganizationWithAdmin(user1, {
+      name: 'Mi Empresa Original',
+      slug: 'mi-empresa',
+    });
+    expect(org1.slug).toBe('mi-empresa');
+
+    // Intento de crear otra organización con el mismo slug (incluso con nombre distinto)
+    await expect(
+      createOrganizationWithAdmin(user2, {
+        name: 'Otra Empresa Con Mismo Slug',
+        slug: 'mi-empresa',
+      }),
+    ).rejects.toMatchObject({
+      code: 'DUPLICATE_ORG_SLUG',
+    });
+
+    // Caso feliz: dos organizaciones con el MISMO nombre pero slugs distintos sí se permiten
+    const org3 = await createOrganizationWithAdmin(user2, {
+      name: 'Mi Empresa Original', // Mismo nombre que org1
+      slug: 'mi-empresa-sucursal', // Slug diferente
+    });
+    expect(org3.name).toBe(org1.name);
+    expect(org3.slug).toBe('mi-empresa-sucursal');
+  });
+
   it('Escenario: Retirar a un miembro no borra lo que ya hizo', async () => {
     const admin = await createTestAuthUser('admin-retire@test-hu001.com', 'Admin Org');
     const member = await createTestAuthUser('member-to-retire@test-hu001.com', 'Miembro A Retirar');
 
-    const org = await createOrganizationWithAdmin(admin, { name: 'Empresa Retiro S.A.S.' });
+    const org = await createOrganizationWithAdmin(admin, { name: 'Empresa Retiro S.A.S.', slug: 'empresa-retiro' });
 
     const mem = await grantMembership(admin, {
       organizationId: org.id,

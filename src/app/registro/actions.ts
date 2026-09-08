@@ -10,6 +10,10 @@ const registerSchema = z.object({
   password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
   fullName: z.string().min(2, 'El nombre completo debe tener al menos 2 caracteres'),
   orgName: z.string().min(2, 'El nombre de la organización debe tener al menos 2 caracteres'),
+  slug: z.string()
+    .min(2, 'El identificador debe tener al menos 2 caracteres')
+    .max(50, 'El identificador no puede superar 50 caracteres')
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Usa solo minúsculas, números y guiones (ej: mi-empresa)'),
 });
 
 export interface RegisterState {
@@ -20,6 +24,7 @@ export interface RegisterState {
     email?: string;
     fullName?: string;
     orgName?: string;
+    slug?: string;
     password?: string;
   };
 }
@@ -32,16 +37,19 @@ export async function registerAccount(
   const rawPassword = formData.get('password');
   const rawFullName = formData.get('fullName');
   const rawOrgName = formData.get('orgName');
+  const rawSlug = formData.get('slug');
 
   const emailStr = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
   const fullNameStr = typeof rawFullName === 'string' ? rawFullName.trim() : '';
   const orgNameStr = typeof rawOrgName === 'string' ? rawOrgName.trim() : '';
+  const slugStr = typeof rawSlug === 'string' ? rawSlug.trim().toLowerCase() : '';
   const passwordStr = typeof rawPassword === 'string' ? rawPassword : '';
 
   const defaultValues = {
     email: emailStr,
     fullName: fullNameStr,
     orgName: orgNameStr,
+    slug: slugStr,
     password: passwordStr,
   };
 
@@ -50,6 +58,7 @@ export async function registerAccount(
     password: passwordStr,
     fullName: fullNameStr,
     orgName: orgNameStr,
+    slug: slugStr,
   });
 
   if (!parsed.success) {
@@ -60,7 +69,7 @@ export async function registerAccount(
     };
   }
 
-  const { email, password, fullName, orgName } = parsed.data;
+  const { email, password, fullName, orgName, slug } = parsed.data;
 
   // Determine origin for confirmation link redirect
   const headerList = await headers();
@@ -118,9 +127,16 @@ export async function registerAccount(
 
   try {
     // Create organization and set user as administrator
-    await createOrganizationWithAdmin(newUserId, { name: orgName });
+    await createOrganizationWithAdmin(newUserId, { name: orgName, slug });
   } catch (err: unknown) {
     console.error('[registerAccount] Error creating organization for new user:', err);
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'DUPLICATE_ORG_SLUG') {
+      return {
+        status: 'error',
+        error: 'Ese identificador de organización (slug) ya está en uso. Por favor elige otro.',
+        defaultValues,
+      };
+    }
     return {
       status: 'error',
       error: 'Tu cuenta fue creada pero ocurrió un error al configurar la organización. Por favor contacta a soporte.',

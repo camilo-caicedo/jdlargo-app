@@ -9,24 +9,26 @@ type Tx = DatabaseTransaction;
 export const organizationsRepository = {
   async createOrganizationWithAdmin(
     tx: Tx,
-    input: { name: string; taxId?: string | null; origin?: Record<string, unknown> | null },
+    input: { name: string; slug: string; taxId?: string | null; origin?: Record<string, unknown> | null },
   ) {
     const originJson = input.origin ? JSON.stringify(input.origin) : null;
     const result = await tx.execute<{
       id: string;
       name: string;
+      slug: string;
       tax_id: string | null;
       status: 'active' | 'suspended';
       created_at: string;
       updated_at: string;
     }>(
-      sql`select * from create_organization_with_admin(${input.name}, ${input.taxId ?? null}, ${originJson}::jsonb)`
+      sql`select * from create_organization_with_admin(${input.name}, ${input.slug}, ${input.taxId ?? null}, ${originJson}::jsonb)`
     );
     const row = result[0];
     if (!row) throw new Error('Failed to create organization');
     return {
       id: row.id,
       name: row.name,
+      slug: row.slug,
       taxId: row.tax_id,
       status: row.status,
       createdAt: new Date(row.created_at),

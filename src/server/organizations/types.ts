@@ -20,6 +20,7 @@ export interface User {
 export interface Organization {
   id: string;
   name: string;
+  slug: string;
   taxId: string | null;
   status: OrganizationStatus;
   createdAt: Date;

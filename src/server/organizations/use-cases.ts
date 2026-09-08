@@ -38,6 +38,10 @@ export class ValidationError extends DomainError {
 interface DatabaseErrorLike {
   code?: string;
   message?: string;
+  cause?: {
+    code?: string;
+    message?: string;
+  };
 }
 
 export async function createOrganizationWithAdmin(
@@ -54,7 +58,13 @@ export async function createOrganizationWithAdmin(
       return await organizationsRepository.createOrganizationWithAdmin(tx, parsed.data);
     } catch (err: unknown) {
       const dbErr = err as DatabaseErrorLike;
-      if (dbErr?.code === '42501' || dbErr?.message?.includes('permission denied')) {
+      const errorCode = dbErr?.code || dbErr?.cause?.code;
+      const errorMessage = dbErr?.message || dbErr?.cause?.message || '';
+
+      if (errorCode === '23505') {
+        throw new DomainError('Ya existe una organización con ese identificador (slug)', 'DUPLICATE_ORG_SLUG');
+      }
+      if (errorCode === '42501' || errorMessage.includes('permission denied')) {
         throw new ForbiddenError('No tienes permisos para crear la organización');
       }
       throw err;
