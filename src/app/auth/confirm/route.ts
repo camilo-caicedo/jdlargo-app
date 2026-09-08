@@ -7,24 +7,35 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type') as EmailOtpType | null;
-
-  if (!token_hash || !type) {
-    const errorUrl = new URL('/registro', request.url);
-    errorUrl.searchParams.set('error', 'missing_token');
-    return NextResponse.redirect(errorUrl);
-  }
+  const code = searchParams.get('code');
 
   const supabase = await createSupabaseServerClient();
 
-  const { error } = await supabase.auth.verifyOtp({
-    type,
-    token_hash,
-  });
+  if (token_hash && type) {
+    const { error } = await supabase.auth.verifyOtp({
+      type,
+      token_hash,
+    });
 
-  if (error) {
-    console.error('[auth/confirm] OTP verification error:', error);
+    if (error) {
+      console.error('[auth/confirm] OTP verification error:', error);
+      const errorUrl = new URL('/registro', request.url);
+      errorUrl.searchParams.set('error', 'invalid_token');
+      return NextResponse.redirect(errorUrl);
+    }
+  } else if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (error) {
+      console.error('[auth/confirm] Code exchange error:', error);
+      const errorUrl = new URL('/registro', request.url);
+      errorUrl.searchParams.set('error', 'invalid_token');
+      return NextResponse.redirect(errorUrl);
+    }
+  } else {
+    console.warn('[auth/confirm] Missing token_hash or code in URL:', request.url);
     const errorUrl = new URL('/registro', request.url);
-    errorUrl.searchParams.set('error', 'invalid_token');
+    errorUrl.searchParams.set('error', 'missing_token');
     return NextResponse.redirect(errorUrl);
   }
 
