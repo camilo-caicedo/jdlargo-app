@@ -44,6 +44,7 @@ export function AppNavigationMenu({
 
   const basePath = `/app/${currentMembership.slug}`;
   const isDashboardActive = pathname === basePath;
+  const isExpedientesActive = pathname.startsWith(`${basePath}/expedientes`);
   const isMiembrosActive = pathname.startsWith(`${basePath}/miembros`);
 
   return (
@@ -144,6 +145,18 @@ export function AppNavigationMenu({
               Espacio de trabajo
             </Link>
 
+            <Link
+              href={`${basePath}/expedientes`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                isExpedientesActive
+                  ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              Expedientes
+            </Link>
+
             {canManageMembers && (
               <Link
                 href={`${basePath}/miembros`}
@@ -182,10 +195,10 @@ export function AppNavigationMenu({
         </div>
 
         {/* Mobile secondary navigation row */}
-        <div className="flex md:hidden items-center gap-2 py-2 border-t border-zinc-100 dark:border-zinc-800 text-xs">
+        <div className="flex md:hidden items-center gap-2 py-2 border-t border-zinc-100 dark:border-zinc-800 text-xs overflow-x-auto">
           <Link
             href={basePath}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-md ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md shrink-0 ${
               isDashboardActive
                 ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100'
                 : 'text-zinc-600 dark:text-zinc-400'
@@ -194,10 +207,21 @@ export function AppNavigationMenu({
             <LayoutDashboard className="w-3 h-3" />
             Inicio
           </Link>
+          <Link
+            href={`${basePath}/expedientes`}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md shrink-0 ${
+              isExpedientesActive
+                ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100'
+                : 'text-zinc-600 dark:text-zinc-400'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+            Expedientes
+          </Link>
           {canManageMembers && (
             <Link
               href={`${basePath}/miembros`}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-md ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md shrink-0 ${
                 isMiembrosActive
                   ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100'
                   : 'text-zinc-600 dark:text-zinc-400'

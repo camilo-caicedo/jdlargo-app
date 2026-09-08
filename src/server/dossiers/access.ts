@@ -280,3 +280,48 @@ export async function revokeAccessLink(
     await db.transaction(executeInTx);
   }
 }
+
+/**
+ * Returns active access link details (without raw token since it's never stored).
+ */
+export async function getActiveAccessLinkForDossier(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+): Promise<{
+  id: string;
+  recipientEmail: string;
+  expiresAt: Date;
+  state: string;
+  requiresSecondFactor: boolean;
+  isExpired: boolean;
+} | null> {
+  const client = txClient || db;
+
+  const [token] = await client
+    .select()
+    .from(dossierAccessTokens)
+    .where(
+      and(
+        eq(dossierAccessTokens.organizationId, organizationId),
+        eq(dossierAccessTokens.dossierId, dossierId),
+        eq(dossierAccessTokens.state, 'active'),
+      ),
+    )
+    .limit(1);
+
+  if (!token) {
+    return null;
+  }
+
+  const isExpired = new Date() > token.expiresAt;
+
+  return {
+    id: token.id,
+    recipientEmail: token.recipientEmail,
+    expiresAt: token.expiresAt,
+    state: isExpired ? 'expired' : token.state,
+    requiresSecondFactor: token.requiresSecondFactor,
+    isExpired,
+  };
+}

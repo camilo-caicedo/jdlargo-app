@@ -1,6 +1,6 @@
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, desc } from 'drizzle-orm';
 import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
-import { dossiers, parties, memberships } from '../db/schema';
+import { dossiers, parties, memberships, counterpartyTypes, users, assertions } from '../db/schema';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
 import { getActiveConfiguration } from '../configuration/service';
@@ -269,4 +269,162 @@ export async function getDossierPendingRequirements(
     dossier.counterpartyTypeId,
     client,
   );
+}
+
+export interface DossierListItem {
+  id: string;
+  code: string;
+  partyId: string;
+  partyIdentificationType: string;
+  partyIdentificationNumber: string;
+  partyDeclaredName: string;
+  counterpartyTypeName: string;
+  standard: string;
+  internalOwnerName: string | null;
+  state: string;
+  deadline: Date | null;
+  createdAt: Date;
+}
+
+/**
+ * Lists all dossiers for an organization with joined party, counterparty type, and owner information.
+ */
+export async function listDossiersForOrganization(
+  organizationId: string,
+  txClient?: DrizzleClient,
+): Promise<DossierListItem[]> {
+  const client = txClient || db;
+
+  const rows = await client
+    .select({
+      id: dossiers.id,
+      code: dossiers.code,
+      partyId: dossiers.partyId,
+      partyIdentificationType: parties.identificationType,
+      partyIdentificationNumber: parties.identificationNumber,
+      counterpartyTypeName: counterpartyTypes.name,
+      standard: dossiers.standard,
+      internalOwnerName: users.name,
+      state: dossiers.state,
+      deadline: dossiers.deadline,
+      createdAt: dossiers.createdAt,
+    })
+    .from(dossiers)
+    .leftJoin(parties, eq(dossiers.partyId, parties.id))
+    .leftJoin(counterpartyTypes, eq(dossiers.counterpartyTypeId, counterpartyTypes.id))
+    .leftJoin(users, eq(dossiers.internalOwnerId, users.id))
+    .where(eq(dossiers.organizationId, organizationId))
+    .orderBy(desc(dossiers.createdAt));
+
+  // Also query declared name assertion for each party/dossier
+  const dossierIds = rows.map((r) => r.id);
+  const declaredNamesMap = new Map<string, string>();
+
+  if (dossierIds.length > 0) {
+    const nameAssertions = await client
+      .select({
+        dossierId: assertions.dossierId,
+        declaredName: assertions.value,
+      })
+      .from(assertions)
+      .where(
+        and(
+          eq(assertions.organizationId, organizationId),
+          eq(assertions.field, 'party.declared_name'),
+        ),
+      );
+
+    for (const a of nameAssertions) {
+      if (a.dossierId) {
+        declaredNamesMap.set(a.dossierId, String(a.declaredName));
+      }
+    }
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    code: r.code || 'SIN-CODIGO',
+    partyId: r.partyId || '',
+    partyIdentificationType: r.partyIdentificationType || '',
+    partyIdentificationNumber: r.partyIdentificationNumber || '',
+    partyDeclaredName: declaredNamesMap.get(r.id) || 'Contraparte',
+    counterpartyTypeName: r.counterpartyTypeName || 'Sin tipo',
+    standard: r.standard || 'SARLAFT',
+    internalOwnerName: r.internalOwnerName,
+    state: r.state,
+    deadline: r.deadline,
+    createdAt: r.createdAt,
+  }));
+}
+
+/**
+ * Returns full detail of a single dossier by ID with party, owner, and counterparty type.
+ */
+export async function getDossierById(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+): Promise<DossierListItem & { configurationVersionId: string } | null> {
+  const client = txClient || db;
+
+  const [row] = await client
+    .select({
+      id: dossiers.id,
+      code: dossiers.code,
+      partyId: dossiers.partyId,
+      partyIdentificationType: parties.identificationType,
+      partyIdentificationNumber: parties.identificationNumber,
+      counterpartyTypeName: counterpartyTypes.name,
+      standard: dossiers.standard,
+      internalOwnerName: users.name,
+      state: dossiers.state,
+      deadline: dossiers.deadline,
+      configurationVersionId: dossiers.configurationVersionId,
+      createdAt: dossiers.createdAt,
+    })
+    .from(dossiers)
+    .leftJoin(parties, eq(dossiers.partyId, parties.id))
+    .leftJoin(counterpartyTypes, eq(dossiers.counterpartyTypeId, counterpartyTypes.id))
+    .leftJoin(users, eq(dossiers.internalOwnerId, users.id))
+    .where(
+      and(
+        eq(dossiers.organizationId, organizationId),
+        eq(dossiers.id, dossierId),
+      ),
+    )
+    .limit(1);
+
+  if (!row) {
+    return null;
+  }
+
+  const [nameAssertion] = await client
+    .select({
+      value: assertions.value,
+    })
+    .from(assertions)
+    .where(
+      and(
+        eq(assertions.organizationId, organizationId),
+        eq(assertions.dossierId, dossierId),
+        eq(assertions.field, 'party.declared_name'),
+      ),
+    )
+    .limit(1);
+
+  return {
+    id: row.id,
+    code: row.code || 'SIN-CODIGO',
+    partyId: row.partyId || '',
+    partyIdentificationType: row.partyIdentificationType || '',
+    partyIdentificationNumber: row.partyIdentificationNumber || '',
+    partyDeclaredName: nameAssertion?.value ? String(nameAssertion.value) : 'Contraparte',
+    counterpartyTypeName: row.counterpartyTypeName || 'Sin tipo',
+    standard: row.standard || 'SARLAFT',
+    internalOwnerName: row.internalOwnerName,
+    state: row.state,
+    deadline: row.deadline,
+    configurationVersionId: row.configurationVersionId,
+    createdAt: row.createdAt,
+  };
 }
