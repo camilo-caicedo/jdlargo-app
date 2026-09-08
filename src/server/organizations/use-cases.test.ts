@@ -43,17 +43,48 @@ async function createTestAuthUser(email: string, name: string): Promise<string> 
   return res[0].id;
 }
 
+const TEST_ORG_NAMES = [
+  'Transportes Ficticios S.A.S.',
+  'Alfa Ficticia S.A.S.',
+  'Beta Ficticia S.A.S.',
+  'Empresa Privada S.A.S.',
+  'Alfa Org',
+  'Beta Org',
+  'Mi Empresa Original',
+  'Empresa Retiro S.A.S.',
+];
+
 async function cleanupTestData() {
   await adminSql`SET app.allow_config_cleanup = 'true'`;
-  await adminSql`DELETE FROM public.audit_log`;
+  await adminSql`
+    DELETE FROM public.audit_log
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu001.com')
+  `;
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.memberships`;
+  await adminSql`
+    DELETE FROM public.memberships
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu001.com')
+  `;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.role_permissions`;
-  await adminSql`DELETE FROM public.roles`;
-  await adminSql`DELETE FROM public.configuration_versions`;
-  await adminSql`DELETE FROM public.organizations`;
-  await adminSql`DELETE FROM public.users`;
+  await adminSql`
+    DELETE FROM public.role_permissions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.roles
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.configuration_versions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.organizations
+    WHERE name IN ${adminSql(TEST_ORG_NAMES)}
+  `;
+  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu001.com'`;
   await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu001.com'`;
   await adminSql`RESET app.allow_config_cleanup`;
 }

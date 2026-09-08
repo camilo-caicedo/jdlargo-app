@@ -36,20 +36,48 @@ async function createTestAuthUser(email: string, name: string): Promise<string> 
   return res[0].id;
 }
 
+const TEST_ORG_NAMES = [
+  'Alfa Ficticia S.A.S.',
+  'Beta Ficticia S.A.S.',
+];
+
 async function cleanupTestData() {
   await new Promise((r) => setTimeout(r, 100));
   await adminSql.begin(async (tx) => {
     await tx`SET app.allow_config_cleanup = 'true'`;
-    await tx`DELETE FROM public.audit_log`;
-    await tx`DELETE FROM public.assertions`;
+    await tx`
+      DELETE FROM public.audit_log
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
+         OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu006.com')
+    `;
+    await tx`
+      DELETE FROM public.assertions
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
+    `;
     await tx`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
-    await tx`DELETE FROM public.memberships`;
+    await tx`
+      DELETE FROM public.memberships
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
+         OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu006.com')
+    `;
     await tx`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
-    await tx`DELETE FROM public.role_permissions`;
-    await tx`DELETE FROM public.roles`;
-    await tx`DELETE FROM public.configuration_versions`;
-    await tx`DELETE FROM public.organizations`;
-    await tx`DELETE FROM public.users`;
+    await tx`
+      DELETE FROM public.role_permissions
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
+    `;
+    await tx`
+      DELETE FROM public.roles
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
+    `;
+    await tx`
+      DELETE FROM public.configuration_versions
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
+    `;
+    await tx`
+      DELETE FROM public.organizations
+      WHERE name IN ${tx(TEST_ORG_NAMES)}
+    `;
+    await tx`DELETE FROM public.users WHERE email LIKE '%@test-hu006.com'`;
     await tx`DELETE FROM auth.users WHERE email LIKE '%@test-hu006.com'`;
     await tx`RESET app.allow_config_cleanup`;
   });

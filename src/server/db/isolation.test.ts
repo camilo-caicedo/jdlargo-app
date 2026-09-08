@@ -38,28 +38,98 @@ async function createTestAuthUser(email: string, name: string): Promise<string> 
   return res[0].id;
 }
 
+const TEST_ORG_NAMES = [
+  'Alfa Ficticia S.A.S.',
+  'Beta Ficticia S.A.S.',
+  'Alfa Org Two',
+  'Beta Org Two',
+  'Org With Rows',
+  'Org Alfa Tables',
+  'Org Beta Tables',
+  'Org For System Job',
+];
+
 async function cleanupTestData() {
   await new Promise((r) => setTimeout(r, 100));
   await adminSql`SET app.allow_config_cleanup = 'true'`;
-  await adminSql`DELETE FROM public.audit_log`;
+  await adminSql`
+    DELETE FROM public.audit_log
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu002.com')
+  `;
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.memberships`;
+  await adminSql`
+    DELETE FROM public.memberships
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu002.com')
+  `;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.invitations`;
-  await adminSql`DELETE FROM public.dossier_access_otp_codes`;
-  await adminSql`DELETE FROM public.dossier_access_uses`;
-  await adminSql`DELETE FROM public.dossier_access_tokens`;
-  await adminSql`DELETE FROM public.dossier_transitions`;
-  await adminSql`DELETE FROM public.assertions`;
-  await adminSql`DELETE FROM public.dossiers`;
-  await adminSql`DELETE FROM public.parties`;
-  await adminSql`DELETE FROM public.requirements`;
-  await adminSql`DELETE FROM public.counterparty_types`;
-  await adminSql`DELETE FROM public.role_permissions`;
-  await adminSql`DELETE FROM public.roles`;
-  await adminSql`DELETE FROM public.configuration_versions`;
-  await adminSql`DELETE FROM public.organizations`;
-  await adminSql`DELETE FROM public.users`;
+  await adminSql`
+    DELETE FROM public.invitations
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.dossier_access_otp_codes
+    WHERE token_id IN (
+      SELECT id FROM public.dossier_access_tokens
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+    )
+  `;
+  await adminSql`
+    DELETE FROM public.dossier_access_uses
+    WHERE token_id IN (
+      SELECT id FROM public.dossier_access_tokens
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+    )
+  `;
+  await adminSql`
+    DELETE FROM public.dossier_access_tokens
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.dossier_transitions
+    WHERE dossier_id IN (
+      SELECT id FROM public.dossiers
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+    )
+  `;
+  await adminSql`
+    DELETE FROM public.assertions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.dossiers
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.parties
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.requirements
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.counterparty_types
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.role_permissions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.roles
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.configuration_versions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.organizations
+    WHERE name IN ${adminSql(TEST_ORG_NAMES)}
+  `;
+  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu002.com'`;
   await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu002.com'`;
   await adminSql`RESET app.allow_config_cleanup`;
 }

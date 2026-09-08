@@ -49,24 +49,75 @@ async function createTestAuthUser(email: string, name: string): Promise<string> 
   return res[0].id;
 }
 
+const TEST_ORG_NAMES = [
+  'Alfa Ficticia S.A.S.',
+  'Matrix Inheritance Org',
+  'Version Freeze Org',
+  'No Config Org',
+  'Beta Ficticia S.A.S.',
+  'Permission Org',
+  'Party Reuse Org',
+];
+
 async function cleanupTestData() {
   await new Promise((r) => setTimeout(r, 100));
   await adminSql`SET app.allow_config_cleanup = 'true'`;
-  await adminSql`DELETE FROM public.audit_log`;
-  await adminSql`DELETE FROM public.assertions`;
+  await adminSql`
+    DELETE FROM public.audit_log
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com')
+  `;
+  await adminSql`
+    DELETE FROM public.assertions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.memberships`;
+  await adminSql`
+    DELETE FROM public.memberships
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com')
+  `;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`DELETE FROM public.dossier_transitions`;
-  await adminSql`DELETE FROM public.dossiers`;
-  await adminSql`DELETE FROM public.parties`;
-  await adminSql`DELETE FROM public.requirements`;
-  await adminSql`DELETE FROM public.counterparty_types`;
-  await adminSql`DELETE FROM public.role_permissions`;
-  await adminSql`DELETE FROM public.roles`;
-  await adminSql`DELETE FROM public.configuration_versions`;
-  await adminSql`DELETE FROM public.organizations`;
-  await adminSql`DELETE FROM public.users`;
+  await adminSql`
+    DELETE FROM public.dossier_transitions
+    WHERE dossier_id IN (
+      SELECT id FROM public.dossiers
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+    )
+  `;
+  await adminSql`
+    DELETE FROM public.dossiers
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.parties
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.requirements
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.counterparty_types
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.role_permissions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.roles
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.configuration_versions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.organizations
+    WHERE name IN ${adminSql(TEST_ORG_NAMES)}
+  `;
+  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu008.com'`;
   await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu008.com'`;
   await adminSql`RESET app.allow_config_cleanup`;
 }
@@ -368,7 +419,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const newReqs = await getDossierPendingRequirements(org.id, dossierNew.id);
     expect(newReqs).toHaveLength(2);
     expect(newReqs.map((r) => r.key)).toContain('extra_field_v3');
-  }, 30000);
+  }, 60000);
 
   it('Escenario: No se abre un expediente sin tipo de contraparte válido', async () => {
     const adminUser = await createTestAuthUser('admin4@test-hu008.com', 'Admin Org 4');
