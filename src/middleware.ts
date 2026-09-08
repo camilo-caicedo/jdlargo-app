@@ -29,8 +29,11 @@ if (redisUrl && redisToken) {
 }
 
 export async function middleware(request: NextRequest) {
-  // Block 1: Portal Rate Limiting (HU-010)
-  if (request.nextUrl.pathname.startsWith('/portal')) {
+  // Block 1: Rate Limiting for /portal/* (HU-010) and /registro (HU-060)
+  if (
+    request.nextUrl.pathname.startsWith('/portal') ||
+    request.nextUrl.pathname === '/registro'
+  ) {
     const ip =
       request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
       request.headers.get('x-real-ip') ||
@@ -42,7 +45,7 @@ export async function middleware(request: NextRequest) {
 
         if (!success) {
           console.warn(
-            `[Portal RateLimit Exceeded] IP: ${ip}, Path: ${request.nextUrl.pathname}, Time: ${new Date().toISOString()}`,
+            `[RateLimit Exceeded] IP: ${ip}, Path: ${request.nextUrl.pathname}, Time: ${new Date().toISOString()}`,
           );
 
           return new NextResponse(

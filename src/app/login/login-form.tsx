@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useState, useActionState } from 'react';
+import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import { signIn } from './actions';
 import { Button } from '@/components/ui/button';
@@ -70,6 +71,18 @@ export function LoginForm() {
       >
         {isPending ? 'Iniciando sesión...' : 'Iniciar sesión'}
       </Button>
+
+      <div className="text-center pt-2">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          ¿No tienes cuenta?{' '}
+          <Link
+            href="/registro"
+            className="font-medium text-emerald-600 hover:text-emerald-500 dark:text-emerald-400 hover:underline"
+          >
+            Regístrate
+          </Link>
+        </p>
+      </div>
     </form>
   );
 }
