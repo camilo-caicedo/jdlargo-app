@@ -120,6 +120,13 @@
       "when": 1788828909199,
       "tag": "0016_even_captain_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788835000000,
+      "tag": "0017_sync_auth_user_by_email",
+      "breakpoints": true
     }
   ]
 }
