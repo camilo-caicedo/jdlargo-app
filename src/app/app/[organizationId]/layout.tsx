@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import { requireAuthenticatedUserId, signOutAndRedirect } from '@/server/auth/session';
+import { requireAuthenticatedUserId } from '@/server/auth/session';
+import { signOutAction } from '@/server/auth/actions';
 import { listActiveMembershipsForUser } from '@/server/organizations/use-cases';
 import { checkUserPermission } from '@/server/auth/access-control';
 import { Button } from '@/components/ui/button';
@@ -25,13 +26,12 @@ export default async function AppLayout({
   const canManageMembers = (await checkUserPermission(userId, organizationId, 'memberships:manage')).granted;
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50 flex flex-col">
-      <header className="border-b bg-white dark:bg-zinc-900 px-6 py-3 flex items-center justify-between shadow-xs">
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col">
+      <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 font-semibold text-sm tracking-tight">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-emerald-500 inline-block" />
-            <span>JD Largo</span>
-          </div>
+          <span className="font-semibold text-sm tracking-tight text-zinc-900 dark:text-zinc-100">
+            JD Largo
+          </span>
           <span className="text-zinc-300 dark:text-zinc-700">/</span>
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
             {currentMembership.organizationName}
@@ -47,7 +47,7 @@ export default async function AppLayout({
               Miembros
             </a>
           )}
-          <form action={signOutAndRedirect}>
+          <form action={signOutAction}>
             <Button variant="ghost" size="sm" type="submit" className="text-xs text-zinc-600 dark:text-zinc-400">
               Cerrar sesión
             </Button>
