@@ -33,7 +33,7 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
           Plataforma de Prevención de Riesgos LA/FT/FPADM
         </p>
       </header>
-      <main className="w-full max-w-[420px]">
+      <main className="w-full max-w-[460px]">
         <Card className="shadow-sm">
           <CardHeader className="text-center pb-4">
             <CardTitle>Crear organización</CardTitle>

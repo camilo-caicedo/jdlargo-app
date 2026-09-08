@@ -304,20 +304,20 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 pt-2">
+          <div className="flex items-center gap-3 pt-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => setStep('account')}
               disabled={isPending}
-              className="font-medium inline-flex items-center justify-center gap-1.5"
+              className="shrink-0 font-medium inline-flex items-center justify-center gap-1.5 px-3"
             >
               <ArrowLeft className="h-4 w-4" />
               <span>Volver</span>
             </Button>
             <Button
               type="submit"
-              className="w-full font-medium"
+              className="flex-1 font-medium truncate"
               disabled={isPending}
             >
               {isPending ? 'Creando cuenta...' : 'Crear cuenta y organización'}
