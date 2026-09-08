@@ -13,6 +13,7 @@ const signInSchema = z.object({
 export interface SignInActionResult {
   success: boolean;
   error?: string;
+  defaultEmail?: string;
 }
 
 export async function signIn(
@@ -21,9 +22,10 @@ export async function signIn(
 ): Promise<SignInActionResult> {
   const rawEmail = formData.get('email');
   const rawPassword = formData.get('password');
+  const emailStr = typeof rawEmail === 'string' ? rawEmail.trim() : '';
 
   const parsed = signInSchema.safeParse({
-    email: typeof rawEmail === 'string' ? rawEmail.trim() : '',
+    email: emailStr,
     password: typeof rawPassword === 'string' ? rawPassword : '',
   });
 
@@ -31,6 +33,7 @@ export async function signIn(
     return {
       success: false,
       error: parsed.error.issues[0]?.message || 'Credenciales inválidas',
+      defaultEmail: emailStr,
     };
   }
 
@@ -44,6 +47,7 @@ export async function signIn(
     return {
       success: false,
       error: 'Correo o contraseña incorrectos. Verifique sus credenciales.',
+      defaultEmail: emailStr,
     };
   }
 
@@ -53,6 +57,7 @@ export async function signIn(
     return {
       success: false,
       error: 'No tiene acceso a ninguna organización cliente activa.',
+      defaultEmail: emailStr,
     };
   }
 

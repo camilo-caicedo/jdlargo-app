@@ -16,6 +16,11 @@ export interface RegisterState {
   status: 'idle' | 'error' | 'check_email';
   error?: string;
   email?: string;
+  defaultValues?: {
+    email?: string;
+    fullName?: string;
+    orgName?: string;
+  };
 }
 
 export async function registerAccount(
@@ -27,17 +32,28 @@ export async function registerAccount(
   const rawFullName = formData.get('fullName');
   const rawOrgName = formData.get('orgName');
 
+  const emailStr = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
+  const fullNameStr = typeof rawFullName === 'string' ? rawFullName.trim() : '';
+  const orgNameStr = typeof rawOrgName === 'string' ? rawOrgName.trim() : '';
+
+  const defaultValues = {
+    email: emailStr,
+    fullName: fullNameStr,
+    orgName: orgNameStr,
+  };
+
   const parsed = registerSchema.safeParse({
-    email: typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '',
+    email: emailStr,
     password: typeof rawPassword === 'string' ? rawPassword : '',
-    fullName: typeof rawFullName === 'string' ? rawFullName.trim() : '',
-    orgName: typeof rawOrgName === 'string' ? rawOrgName.trim() : '',
+    fullName: fullNameStr,
+    orgName: orgNameStr,
   });
 
   if (!parsed.success) {
     return {
       status: 'error',
       error: parsed.error.issues[0]?.message || 'Datos del formulario inválidos',
+      defaultValues,
     };
   }
 
@@ -63,9 +79,17 @@ export async function registerAccount(
   });
 
   if (signUpError) {
+    if (signUpError.message?.toLowerCase().includes('rate limit') || signUpError.code === 'over_email_send_rate_limit') {
+      return {
+        status: 'error',
+        error: 'Se ha superado el límite de envío de correos temporales del servicio de autenticación. Por favor espera unos minutos antes de intentar registrarte nuevamente.',
+        defaultValues,
+      };
+    }
     return {
       status: 'error',
       error: signUpError.message || 'Error al procesar el registro.',
+      defaultValues,
     };
   }
 
@@ -75,6 +99,7 @@ export async function registerAccount(
     return {
       status: 'error',
       error: 'Ya existe una cuenta registrada con este correo electrónico. Por favor inicie sesión.',
+      defaultValues,
     };
   }
 
@@ -82,6 +107,7 @@ export async function registerAccount(
     return {
       status: 'error',
       error: 'No se pudo crear el usuario. Por favor intente más tarde.',
+      defaultValues,
     };
   }
 
@@ -95,6 +121,7 @@ export async function registerAccount(
     return {
       status: 'error',
       error: 'Tu cuenta fue creada pero ocurrió un error al configurar la organización. Por favor contacta a soporte.',
+      defaultValues,
     };
   }
 

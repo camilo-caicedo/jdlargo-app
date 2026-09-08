@@ -96,6 +96,7 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
           type="text"
           autoComplete="name"
           required
+          defaultValue={state.defaultValues?.fullName}
           placeholder="María Gómez"
           disabled={isPending}
         />
@@ -109,6 +110,7 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
           type="email"
           autoComplete="email"
           required
+          defaultValue={state.defaultValues?.email}
           placeholder="maria@empresa.com"
           disabled={isPending}
         />
@@ -151,6 +153,7 @@ export function RegisterForm({ initialError }: RegisterFormProps) {
           name="orgName"
           type="text"
           required
+          defaultValue={state.defaultValues?.orgName}
           placeholder="Transportes del Norte S.A.S."
           disabled={isPending}
         />

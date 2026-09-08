@@ -30,6 +30,7 @@ export function LoginForm() {
           type="email"
           autoComplete="email"
           required
+          defaultValue={state?.defaultEmail}
           placeholder="nombre@empresa.com"
           disabled={isPending}
         />
