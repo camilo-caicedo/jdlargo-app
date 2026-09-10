@@ -182,7 +182,7 @@ export async function createDossierRequest(
         dossierId: shell.id,
         partyId,
         configurationVersionId: activeVersion.id,
-        field: 'declared_name',
+        field: 'party.declared_name',
         value: input.party.declaredName,
         origin: 'declared',
         producedBy: input.requestedBy,

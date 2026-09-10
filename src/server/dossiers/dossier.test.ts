@@ -232,7 +232,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
       SELECT field, value::text, origin FROM public.assertions
       WHERE organization_id = ${org.id}
         AND dossier_id = ${dossier.id}
-        AND field = 'declared_name'
+        AND field = 'party.declared_name'
     `;
     expect(assertionsList).toHaveLength(1);
     expect(assertionsList[0].origin).toBe('declared');
