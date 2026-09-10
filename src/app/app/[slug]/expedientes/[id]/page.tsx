@@ -89,17 +89,6 @@ export default async function DossierDetailPage({
         </div>
 
         <div className="flex items-center gap-3">
-          <EditDossierBox
-            organizationId={organizationId}
-            dossierId={dossier.id}
-            slug={slug}
-            state={dossier.state}
-            currentInternalOwnerId={dossier.internalOwnerId || null}
-            currentDeadline={dossier.deadline}
-            members={members}
-            canEdit={canEditDossier}
-          />
-
           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${stateBadge.color}`}>
             {stateBadge.label}
           </span>
@@ -125,20 +114,17 @@ export default async function DossierDetailPage({
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center text-xs text-zinc-500 border-t sm:border-t-0 sm:border-l border-zinc-100 dark:border-zinc-800 pt-3 sm:pt-0 sm:pl-6">
-            <div>
-              <div className="text-[11px] text-zinc-400">Responsable interno:</div>
-              <div className="font-medium text-zinc-800 dark:text-zinc-200">{dossier.internalOwnerName || 'Sin asignar'}</div>
-            </div>
-            {dossier.deadline && (
-              <div className="sm:ml-4">
-                <div className="text-[11px] text-zinc-400">Fecha límite:</div>
-                <div className="font-medium text-zinc-800 dark:text-zinc-200">
-                  {new Date(dossier.deadline).toLocaleDateString()}
-                </div>
-              </div>
-            )}
-          </div>
+          <EditDossierBox
+            organizationId={organizationId}
+            dossierId={dossier.id}
+            slug={slug}
+            state={dossier.state}
+            internalOwnerName={dossier.internalOwnerName || null}
+            currentInternalOwnerId={dossier.internalOwnerId || null}
+            currentDeadline={dossier.deadline}
+            members={members}
+            canEdit={canEditDossier}
+          />
         </div>
       </div>
 

@@ -5,8 +5,6 @@ import { useActionState, useState } from 'react';
 import { updateDossierAction, type UpdateDossierFormState } from '../actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Combobox,
   ComboboxContent,
@@ -28,6 +26,7 @@ interface EditDossierBoxProps {
   dossierId: string;
   slug: string;
   state: string;
+  internalOwnerName: string | null;
   currentInternalOwnerId: string | null;
   currentDeadline: Date | null;
   members: MemberOption[];
@@ -39,6 +38,7 @@ export function EditDossierBox({
   dossierId,
   slug,
   state,
+  internalOwnerName,
   currentInternalOwnerId,
   currentDeadline,
   members,
@@ -85,96 +85,93 @@ export function EditDossierBox({
     : '';
   const [deadlineStr, setDeadlineStr] = useState<string>(initialDateStr);
 
-  if (!canEdit) {
-    return null;
-  }
+  const handleCancel = () => {
+    setSelectedOwnerId(currentInternalOwnerId || members[0]?.id || '');
+    setDeadlineStr(initialDateStr);
+    setIsOpen(false);
+  };
 
-  if (isClosed) {
+  // If user cannot edit or if dossier is closed, show read-only details
+  if (!canEdit || isClosed) {
     return (
-      <div className="inline-flex items-center gap-1.5 text-xs text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-2.5 py-1 rounded-md border border-zinc-200 dark:border-zinc-700">
-        <Lock className="w-3.5 h-3.5 text-zinc-400" />
-        <span>Expediente cerrado (edición deshabilitada)</span>
+      <div className="flex flex-col sm:flex-row gap-2 sm:items-center text-xs text-zinc-500 border-t sm:border-t-0 sm:border-l border-zinc-100 dark:border-zinc-800 pt-3 sm:pt-0 sm:pl-6">
+        <div>
+          <div className="text-[11px] text-zinc-400">Responsable interno:</div>
+          <div className="font-medium text-zinc-800 dark:text-zinc-200">
+            {internalOwnerName || 'Sin asignar'}
+          </div>
+        </div>
+        <div className="sm:ml-4">
+          <div className="text-[11px] text-zinc-400">Fecha límite:</div>
+          <div className="font-medium text-zinc-800 dark:text-zinc-200">
+            {currentDeadline ? new Date(currentDeadline).toLocaleDateString() : 'Sin fecha límite'}
+          </div>
+        </div>
+        {isClosed && (
+          <div className="sm:ml-3 flex items-center gap-1 text-[11px] text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700">
+            <Lock className="w-3 h-3 text-zinc-400" />
+            <span>Cerrado</span>
+          </div>
+        )}
       </div>
     );
   }
 
-  return (
-    <div className="relative">
-      {!isOpen ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setIsOpen(true)}
-          className="h-8 gap-1.5 text-xs font-medium border-zinc-200 dark:border-zinc-700"
-        >
-          <Pencil className="w-3.5 h-3.5" />
-          Editar datos
-        </Button>
-      ) : (
-        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-md space-y-4 max-w-md w-full">
-          <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
-            <h4 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-              <Pencil className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              Editar datos administrativos
-            </h4>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1"
-              disabled={isPending}
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
+  // Edit mode: inline form replacing the read-only divs
+  if (isOpen) {
+    return (
+      <div className="border-t sm:border-t-0 sm:border-l border-zinc-100 dark:border-zinc-800 pt-3 sm:pt-0 sm:pl-6">
+        <form action={formAction} className="space-y-3">
           {formState?.error && (
-            <Alert variant="destructive" className="py-2 text-xs">
-              <AlertDescription>{formState.error}</AlertDescription>
-            </Alert>
+            <p className="text-[11px] text-red-600 dark:text-red-400">
+              {formState.error}
+            </p>
           )}
 
-          <form action={formAction} className="space-y-3.5 text-xs">
-            <div className="space-y-1.5">
-              <Label htmlFor="internalOwnerId" className="text-xs">
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+            <div className="space-y-1">
+              <label htmlFor="internalOwnerId" className="text-[11px] font-medium text-zinc-500">
                 Responsable interno *
-              </Label>
+              </label>
               <input type="hidden" name="internalOwnerId" value={selectedOwnerId} />
-              <Combobox
-                items={memberItems}
-                value={selectedMemberItem}
-                onValueChange={(val) => {
-                  if (val) setSelectedOwnerId(val.value);
-                }}
-                itemToStringLabel={(item) => item?.label ?? ''}
-                isItemEqualToValue={(a, b) => a?.value === b?.value}
-                disabled={isPending}
-              >
-                <ComboboxInput placeholder="Buscar por nombre o correo..." />
-                <ComboboxContent>
-                  <ComboboxEmpty>No se encontraron miembros.</ComboboxEmpty>
-                  <ComboboxList>
-                    {(item: { value: string; label: string }) => (
-                      <ComboboxItem key={item.value} value={item}>
-                        {item.label}
-                      </ComboboxItem>
-                    )}
-                  </ComboboxList>
-                </ComboboxContent>
-              </Combobox>
+              <div className="w-[200px] sm:w-[240px]">
+                <Combobox
+                  items={memberItems}
+                  value={selectedMemberItem}
+                  onValueChange={(val) => {
+                    if (val) setSelectedOwnerId(val.value);
+                  }}
+                  itemToStringLabel={(item) => item?.label ?? ''}
+                  isItemEqualToValue={(a, b) => a?.value === b?.value}
+                  disabled={isPending}
+                >
+                  <ComboboxInput placeholder="Buscar miembro..." className="h-8 text-xs" />
+                  <ComboboxContent>
+                    <ComboboxEmpty>No se encontraron miembros.</ComboboxEmpty>
+                    <ComboboxList>
+                      {(item: { value: string; label: string }) => (
+                        <ComboboxItem key={item.value} value={item}>
+                          {item.label}
+                        </ComboboxItem>
+                      )}
+                    </ComboboxList>
+                  </ComboboxContent>
+                </Combobox>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="deadline" className="text-xs">
-                  Fecha límite para completar
-                </Label>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-1">
+                <label htmlFor="deadline" className="text-[11px] font-medium text-zinc-500">
+                  Fecha límite
+                </label>
                 {deadlineStr && (
                   <button
                     type="button"
                     onClick={() => setDeadlineStr('')}
                     className="text-[10px] text-zinc-400 hover:text-red-500 underline cursor-pointer"
                   >
-                    Quitar fecha límite
+                    Quitar
                   </button>
                 )}
               </div>
@@ -185,46 +182,72 @@ export function EditDossierBox({
                 value={deadlineStr}
                 onChange={(e) => setDeadlineStr(e.target.value)}
                 disabled={isPending}
-                className="h-8 text-xs"
+                className="h-8 text-xs w-[140px]"
               />
-              <p className="text-[10px] text-zinc-400">
-                Deje en blanco o use &quot;Quitar fecha límite&quot; para limpiar la fecha.
-              </p>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsOpen(false)}
-                disabled={isPending}
-                className="h-7 text-xs"
-              >
-                Cancelar
-              </Button>
+            <div className="flex items-center gap-1.5 pb-0.5">
               <Button
                 type="submit"
                 size="sm"
                 disabled={isPending}
-                className="h-7 text-xs gap-1.5 shadow-xs"
+                className="h-8 px-2.5 text-xs gap-1 shadow-xs"
               >
                 {isPending ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Guardando...
-                  </>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <>
                     <Check className="w-3.5 h-3.5" />
-                    Guardar cambios
+                    <span>Guardar</span>
                   </>
                 )}
               </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleCancel}
+                disabled={isPending}
+                className="h-8 px-2 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span className="sr-only sm:not-sr-only sm:ml-1">Cancelar</span>
+              </Button>
             </div>
-          </form>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // Read mode: exact view with small inline edit pencil button
+  return (
+    <div className="flex flex-col sm:flex-row gap-2 sm:items-center text-xs text-zinc-500 border-t sm:border-t-0 sm:border-l border-zinc-100 dark:border-zinc-800 pt-3 sm:pt-0 sm:pl-6">
+      <div>
+        <div className="text-[11px] text-zinc-400">Responsable interno:</div>
+        <div className="font-medium text-zinc-800 dark:text-zinc-200">
+          {internalOwnerName || 'Sin asignar'}
         </div>
-      )}
+      </div>
+      <div className="sm:ml-4">
+        <div className="text-[11px] text-zinc-400">Fecha límite:</div>
+        <div className="font-medium text-zinc-800 dark:text-zinc-200">
+          {currentDeadline ? new Date(currentDeadline).toLocaleDateString() : 'Sin fecha límite'}
+        </div>
+      </div>
+      <div className="sm:ml-3 pt-1 sm:pt-0">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsOpen(true)}
+          className="h-7 px-2 text-xs gap-1 font-medium border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100"
+          title="Editar responsable interno y fecha límite"
+        >
+          <Pencil className="w-3 h-3" />
+          <span>Editar</span>
+        </Button>
+      </div>
     </div>
   );
 }
+
