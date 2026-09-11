@@ -10,7 +10,7 @@ import { getConsentForDossier } from '@/server/consent/consent';
 import { getLatestDocumentsForDossier } from '@/server/documents/document';
 import { ensureReviewEntryTransition } from '@/server/dossiers/review';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { ArrowLeft, History } from 'lucide-react';
+import { ArrowLeft, History, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { AccessLinkBox } from './access-link-box';
 import { ConsentCard } from './consent-card';
 import { EditDossierBox } from './edit-dossier-box';
@@ -80,15 +80,21 @@ export default async function DossierDetailPage({
     await checkUserPermission(userId, organizationId, 'dossier:review')
   ).granted;
 
-  // Load requirements & active link & history & consent & members & documents in parallel
-  const [requirements, activeLink, history, consent, rawMembers, rawDocs] = await Promise.all([
+  // Load requirements & active link & history & consent & members & documents & declared values in parallel
+  const [requirements, activeLink, history, consent, rawMembers, rawDocs, rawValues] = await Promise.all([
     getDossierPendingRequirements(organizationId, id),
     getActiveAccessLinkForDossier(organizationId, id),
     getDossierHistory(organizationId, id),
     getConsentForDossier(organizationId, id),
     listMembers(userId, organizationId),
     canViewDocuments ? getLatestDocumentsForDossier(organizationId, id) : Promise.resolve([]),
+    import('@/server/assertions/service').then((m) =>
+      m.getLatestDeclaredValuesForDossier(organizationId, id),
+    ),
   ]);
+
+  const declaredValuesMap = new Map(rawValues.map((v) => [v.field, v]));
+  const documentsMap = new Map(rawDocs.map((d) => [d.documentType, d]));
 
   const docsDTO = rawDocs.map((d) => ({
     id: d.id,
@@ -111,6 +117,17 @@ export default async function DossierDetailPage({
   }));
 
   const stateBadge = getHumanState(dossier.state);
+
+  const coveredRequirementsCount = requirements.filter((req) => {
+    if (req.type === 'field') {
+      const v = declaredValuesMap.get(req.key);
+      return v && v.value !== undefined && v.value !== null && v.value !== '';
+    } else if (req.type === 'document_type') {
+      const d = documentsMap.get(req.key);
+      return d && d.state !== 'rejected';
+    }
+    return false;
+  }).length;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -193,38 +210,98 @@ export default async function DossierDetailPage({
                   </CardDescription>
                 </div>
                 <span className="text-[11px] px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium">
-                  {requirements.length} requisitos exigidos
+                  {coveredRequirementsCount} de {requirements.length} cubiertos
                 </span>
               </div>
             </CardHeader>
             <CardContent className="p-0">
               <ul className="divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
-                {requirements.map((req) => (
-                  <li key={req.requirementId} className="p-4 flex items-center justify-between hover:bg-zinc-50/50 dark:hover:bg-zinc-900/50">
-                    <div className="space-y-0.5">
-                      <div className="font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                        {req.type === 'document_type' ? (
-                          <span className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold uppercase">
-                            Documento
-                          </span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[10px] font-semibold uppercase">
-                            Campo
-                          </span>
-                        )}
-                        <span>{req.key}</span>
-                      </div>
-                      <div className="text-[11px] text-zinc-400">
-                        {req.mandatory === 'always' && 'Obligatorio'}
-                        {req.mandatory === 'conditional' && 'Condicional según matriz'}
-                        {req.mandatory === 'optional' && 'Opcional'}
-                      </div>
-                    </div>
-                    <span className="text-zinc-400 text-[11px] italic">
-                      Pendiente de recepción
+                {requirements.map((req) => {
+                  let statusBadge = (
+                    <span className="inline-flex items-center gap-1 text-zinc-400 text-[11px] italic">
+                      <Clock className="w-3.5 h-3.5" />
+                      Pendiente
                     </span>
-                  </li>
-                ))}
+                  );
+                  let detailText: string | null = null;
+
+                  if (req.type === 'field') {
+                    const declared = declaredValuesMap.get(req.key);
+                    if (declared && declared.value !== undefined && declared.value !== null && declared.value !== '') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Declarado
+                        </span>
+                      );
+                      detailText = String(declared.value);
+                    }
+                  } else if (req.type === 'document_type') {
+                    const doc = documentsMap.get(req.key);
+                    if (doc) {
+                      if (doc.state === 'valid') {
+                        statusBadge = (
+                          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-[11px] font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Válido (v{doc.version})
+                          </span>
+                        );
+                      } else if (doc.state === 'rejected') {
+                        statusBadge = (
+                          <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 text-[11px] font-medium">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            Rechazado (v{doc.version})
+                          </span>
+                        );
+                      } else {
+                        // received or other intermediate state
+                        statusBadge = (
+                          <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 text-[11px] font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Recibido (v{doc.version})
+                          </span>
+                        );
+                      }
+                    }
+                  }
+
+                  return (
+                    <li key={req.requirementId} className="p-4 flex items-center justify-between hover:bg-zinc-50/50 dark:hover:bg-zinc-900/50">
+                      <div className="space-y-0.5">
+                        <div className="font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                          {req.type === 'document_type' ? (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold uppercase">
+                              Documento
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[10px] font-semibold uppercase">
+                              Campo
+                            </span>
+                          )}
+                          <span className="capitalize">{req.key.replace(/_/g, ' ')}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                          <span>
+                            {req.mandatory === 'always' && 'Obligatorio'}
+                            {req.mandatory === 'conditional' && 'Condicional según matriz'}
+                            {req.mandatory === 'optional' && 'Opcional'}
+                          </span>
+                          {detailText && (
+                            <>
+                              <span>•</span>
+                              <span className="text-zinc-600 dark:text-zinc-300 font-mono font-medium">
+                                Valor: {detailText}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        {statusBadge}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </CardContent>
           </Card>
