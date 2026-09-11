@@ -61,7 +61,9 @@
     "description": "Revisa expedientes y aprueba según la política de la organización",
     "permissions": [
       "dossier:view",
+      "dossier:edit",
       "dossier:review",
+      "dossier:approve",
       "document:view",
       "document:review"
     ]

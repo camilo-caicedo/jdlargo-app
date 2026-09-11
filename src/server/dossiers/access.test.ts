@@ -11,7 +11,13 @@ import { seedBaseConfiguration } from '../auth/role-config';
 import { createDraftConfiguration, publishDraftConfiguration } from '../configuration/service';
 import { addCounterpartyType, addRequirement } from '../configuration/requirement-matrix';
 import { createDossierRequest } from './dossier';
-import { issueAccessLink, revokeAccessLink, getAccessUsesForDossier } from './access';
+import {
+  issueAccessLink,
+  revokeAccessLink,
+  getAccessUsesForDossier,
+  getActiveAccessLinkForDossier,
+} from './access';
+import { resolveAccessToken } from '../privileged/portal-access';
 import { mockSentEmails } from '../notifications/email';
 
 const directUrl = process.env.DIRECT_URL;
@@ -45,6 +51,7 @@ const TEST_ORG_NAMES = [
   'Reemplazo Enlace Org',
   'Revocacion Enlace Org',
   'Reconstruccion Accesos Org',
+  'Revoke Flow Org S.A.S.',
 ];
 
 async function cleanupTestData() {
@@ -658,5 +665,107 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const otherOrgId = '00000000-0000-0000-0000-000000000099';
     const usesOther = await getAccessUsesForDossier(otherOrgId, dossier.id);
     expect(usesOther).toHaveLength(0);
+  }, 60000);
+
+  it('Verifica el flujo de revocación de enlace: getActiveAccessLinkForDossier devuelve null y el portal rechaza el token', async () => {
+    const adminUser = await createTestAuthUser(`admin-revokeflow-${Date.now()}@test-hu010-acc.com`, 'Admin Revoke Flow');
+    const analystUser = await createTestAuthUser(`analyst-revokeflow-${Date.now()}@test-hu010-acc.com`, 'Analyst Revoke Flow');
+
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'Revoke Flow Org S.A.S.' });
+    await seedBaseConfiguration(org.id, adminUser);
+    await grantMembership(adminUser, {
+      organizationId: org.id,
+      userId: analystUser,
+      role: 'compliance_analyst',
+    });
+
+    const draft = await createDraftConfiguration({
+      organizationId: org.id,
+      standard: 'SARLAFT',
+      rolesConfig: [
+        {
+          code: 'compliance_analyst',
+          name: 'Analista de Cumplimiento',
+          permissions: ['dossier:view', 'dossier:edit', 'dossier:create'],
+        },
+        {
+          code: 'admin',
+          name: 'Administrador',
+          permissions: ['configuration:view', 'configuration:publish'],
+        },
+      ],
+    });
+
+    const cpType = await addCounterpartyType({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      name: 'proveedor',
+      nature: 'legal_entity',
+    });
+
+    await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'tax_id',
+      mandatory: 'always',
+      validation: { dataType: 'string' },
+    });
+
+    await publishDraftConfiguration({
+      organizationId: org.id,
+      versionId: draft.versionId,
+      publishedBy: adminUser,
+      reason: 'Config for revoke test',
+    });
+
+    const dossier = await createDossierRequest({
+      organizationId: org.id,
+      requestedBy: analystUser,
+      counterpartyTypeName: 'proveedor',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '901234567-9',
+        declaredName: 'Proveedor Revoke Flow S.A.S.',
+      },
+      internalOwnerId: analystUser,
+    });
+
+    // 1. Emitir enlace
+    const issuedLink = await issueAccessLink({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      issuedBy: analystUser,
+      requiresSecondFactor: false,
+      recipientEmail: 'contacto@revokeflow.com',
+    });
+    expect(issuedLink.rawToken).toBeDefined();
+
+    // 2. Comprobar que el enlace activo existe
+    const activeLinkBefore = await getActiveAccessLinkForDossier(org.id, dossier.id);
+    expect(activeLinkBefore).not.toBeNull();
+    expect(activeLinkBefore?.id).toBe(issuedLink.id);
+    expect(activeLinkBefore?.state).toBe('active');
+
+    // 3. Revocar enlace
+    await revokeAccessLink({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      revokedBy: analystUser,
+    });
+
+    // 4. getActiveAccessLinkForDossier debe devolver null
+    const activeLinkAfter = await getActiveAccessLinkForDossier(org.id, dossier.id);
+    expect(activeLinkAfter).toBeNull();
+
+    // 5. El portal público debe rechazar el token con motivo 'revoked'
+    const resolveResult = await resolveAccessToken(issuedLink.rawToken, {
+      ipAddress: '127.0.0.1',
+      userAgent: 'Vitest Revoke Test Runner',
+    });
+    expect(resolveResult.outcome).toBe('denied');
+    expect(resolveResult.denialReason).toBe('revoked');
   }, 60000);
 });

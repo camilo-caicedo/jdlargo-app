@@ -21,6 +21,7 @@ import {
   requestCorrections,
   IncompleteReviewError,
 } from './review';
+import { recordDecision } from './decision';
 
 const directUrl = process.env.DIRECT_URL;
 const adminSql = postgres(directUrl || '');
@@ -69,6 +70,10 @@ async function cleanupTestData() {
   `;
   await adminSql`
     DELETE FROM public.documents
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.decisions
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
   await adminSql`
@@ -657,5 +662,100 @@ describe('HU-014: Revisión del expediente y solicitud de correcciones', () => {
       SELECT state FROM public.dossiers WHERE id = ${blkDossier.id}::uuid
     `;
     expect(blkRow.state).toBe('en_revision');
+  });
+
+  it('Verifica que un usuario con rol reviewer puede dar por revisado (completeReview) y registrar decisión (recordDecision)', async () => {
+    const reviewerUserId = await createTestAuthUser(`reviewer-${Date.now()}@test-hu014-rev.com`, 'Reviewer User');
+    await grantMembership(adminUserId, {
+      organizationId: orgId,
+      userId: reviewerUserId,
+      role: 'reviewer',
+    });
+
+    // Crear un nuevo expediente con la versión vigente y llevarlo a en_revision con requisitos cumplidos
+    const dossier = await createDossierRequest({
+      organizationId: orgId,
+      requestedBy: adminUserId,
+      counterpartyTypeName: 'proveedor_bloqueante',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: `900999${Date.now().toString().slice(-3)}`,
+        declaredName: 'Reviewer Test Counterparty S.A.S.',
+      },
+      internalOwnerId: adminUserId,
+    });
+
+    const revDossierId = dossier.id;
+
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: revDossierId,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminUserId,
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: revDossierId,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+
+    // Registrar los requisitos para que esté listo para dar por revisado
+    const assertionRes = await registerAssertion({
+      organizationId: orgId,
+      dossierId: revDossierId,
+      partyId: dossier.partyId,
+      configurationVersionId: dossier.configurationVersionId,
+      field: 'blocking_field',
+      value: 'Cumplido',
+      origin: 'declared',
+    });
+
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: revDossierId,
+      toState: 'documentos_recibidos',
+      actorType: 'counterparty',
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: revDossierId,
+      toState: 'en_revision',
+      actorType: 'user',
+      actorId: reviewerUserId,
+    });
+
+    // 1. completeReview ejecutado por reviewer (requiere dossier:edit)
+    await completeReview({
+      organizationId: orgId,
+      dossierId: revDossierId,
+      reviewedBy: reviewerUserId,
+    });
+
+    const [dossierRow] = await adminSql`
+      SELECT state FROM public.dossiers WHERE id = ${revDossierId}::uuid
+    `;
+    expect(dossierRow.state).toBe('pendiente_de_decision');
+
+    // 2. recordDecision ejecutado por reviewer (requiere dossier:approve)
+    const decisionResult = await recordDecision({
+      organizationId: orgId,
+      dossierId: revDossierId,
+      responsibleId: reviewerUserId,
+      title: 'Revisor de Cumplimiento',
+      type: 'approve',
+      rationale: 'Aprobado por el usuario con rol revisor/aprobador',
+      evidence: [
+        { kind: 'assertion', id: assertionRes.id },
+      ],
+      validUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    });
+    expect(decisionResult.id).toBeDefined();
+
+    const [decidedDossier] = await adminSql`
+      SELECT state FROM public.dossiers WHERE id = ${revDossierId}::uuid
+    `;
+    expect(decidedDossier.state).toBe('aprobada');
   });
 });

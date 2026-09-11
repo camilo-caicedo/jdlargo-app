@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useActionState, useState } from 'react';
-import { issueNewAccessLinkAction } from '../actions';
+import { issueNewAccessLinkAction, revokeAccessLinkAction } from '../actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +14,8 @@ import {
   ExternalLink, 
   RefreshCw, 
   AlertCircle,
-  Loader2 
+  Loader2,
+  Ban
 } from 'lucide-react';
 
 interface AccessLinkBoxProps {
@@ -43,6 +44,8 @@ export function AccessLinkBox({
 }: AccessLinkBoxProps) {
   const [copied, setCopied] = useState(false);
   const [isRenewing, setIsRenewing] = useState(false);
+  const [isRevoking, setIsRevoking] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const actionWithParams = issueNewAccessLinkAction.bind(null, organizationId, dossierId, slug);
   const [renewState, renewFormAction, isPending] = useActionState(actionWithParams, null);
@@ -81,6 +84,12 @@ export function AccessLinkBox({
       {renewState?.error && (
         <Alert variant="destructive">
           <AlertDescription>{renewState.error}</AlertDescription>
+        </Alert>
+      )}
+
+      {revokeError && (
+        <Alert variant="destructive">
+          <AlertDescription>{revokeError}</AlertDescription>
         </Alert>
       )}
 
@@ -147,16 +156,53 @@ export function AccessLinkBox({
           </div>
 
           {canEdit && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsRenewing((prev) => !prev)}
-              className="text-xs font-medium gap-1.5 shrink-0"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              {activeLink.isExpired ? 'Emitir nuevo enlace' : 'Reemplazar enlace'}
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsRenewing((prev) => !prev)}
+                className="text-xs font-medium gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                {activeLink.isExpired ? 'Emitir nuevo enlace' : 'Reemplazar enlace'}
+              </Button>
+
+              {!activeLink.isExpired && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={isRevoking}
+                  onClick={async () => {
+                    const confirmed = window.confirm(
+                      '¿Está seguro de que desea revocar el enlace de acceso? La contraparte ya no podrá acceder con este enlace.',
+                    );
+                    if (!confirmed) return;
+                    setIsRevoking(true);
+                    setRevokeError(null);
+                    try {
+                      const res = await revokeAccessLinkAction(organizationId, dossierId);
+                      if (!res.success) {
+                        setRevokeError(res.error || 'Error al revocar el enlace');
+                      }
+                    } catch (err: unknown) {
+                      setRevokeError(err instanceof Error ? err.message : 'Error inesperado');
+                    } finally {
+                      setIsRevoking(false);
+                    }
+                  }}
+                  className="text-xs font-medium gap-1.5"
+                >
+                  {isRevoking ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Ban className="w-3.5 h-3.5" />
+                  )}
+                  Revocar enlace
+                </Button>
+              )}
+            </div>
           )}
         </div>
       ) : (

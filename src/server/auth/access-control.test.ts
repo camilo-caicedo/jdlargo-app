@@ -48,6 +48,7 @@ const TEST_ORG_NAMES = [
   'Beta Isolation Org',
   'Audit Test S.A.S.',
   'Auditor Org S.A.S.',
+  'Reviewer Org Test S.A.S.',
 ];
 
 async function cleanupTestData() {
@@ -360,7 +361,7 @@ describe('HU-003: Permisos por rol como configuración de la organización', () 
   });
 
   it('Verifica que los roles operativos por defecto cuentan con el permiso dossier:edit', async () => {
-    const operationalRoles = ['admin', 'compliance_analyst', 'operational_user'];
+    const operationalRoles = ['admin', 'compliance_analyst', 'operational_user', 'reviewer'];
     for (const code of operationalRoles) {
       const role = BASE_ROLES_TEMPLATE.find((r) => r.code === code);
       expect(role).toBeDefined();
@@ -370,12 +371,41 @@ describe('HU-003: Permisos por rol como configuración de la organización', () 
       ).toContain('dossier:edit');
     }
 
-    // Roles de solo lectura o revisión externa no deben tener dossier:edit
-    const readOnlyRoles = ['reviewer', 'auditor'];
+    // Rol de solo lectura/auditoría no debe tener dossier:edit
+    const readOnlyRoles = ['auditor'];
     for (const code of readOnlyRoles) {
       const role = BASE_ROLES_TEMPLATE.find((r) => r.code === code);
       expect(role).toBeDefined();
       expect(role?.permissions).not.toContain('dossier:edit');
     }
+  });
+
+  it('Verifica que el rol reviewer cuenta con dossier:edit y dossier:approve para revisar y decidir', async () => {
+    const reviewerRole = BASE_ROLES_TEMPLATE.find((r) => r.code === 'reviewer');
+    expect(reviewerRole).toBeDefined();
+    expect(reviewerRole?.permissions).toContain('dossier:edit');
+    expect(reviewerRole?.permissions).toContain('dossier:approve');
+    expect(reviewerRole?.permissions).toContain('dossier:review');
+    expect(reviewerRole?.permissions).toContain('dossier:view');
+
+    const admin = await createTestAuthUser('admin-rev@test-hu003.com', 'Admin Rev');
+    const reviewerUser = await createTestAuthUser('reviewer-user@test-hu003.com', 'Reviewer User');
+    const org = await createOrganizationWithAdmin(admin, { name: 'Reviewer Org Test S.A.S.' });
+
+    await seedBaseConfiguration(org.id, admin);
+    await grantMembership(admin, {
+      organizationId: org.id,
+      userId: reviewerUser,
+      role: 'reviewer',
+    });
+
+    const editPerm = await checkUserPermission(reviewerUser, org.id, 'dossier:edit');
+    expect(editPerm.granted).toBe(true);
+
+    const approvePerm = await checkUserPermission(reviewerUser, org.id, 'dossier:approve');
+    expect(approvePerm.granted).toBe(true);
+
+    const reviewPerm = await checkUserPermission(reviewerUser, org.id, 'dossier:review');
+    expect(reviewPerm.granted).toBe(true);
   });
 });

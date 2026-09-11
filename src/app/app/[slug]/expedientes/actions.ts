@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requireAuthenticatedUserId } from '@/server/auth/session';
 import { createDossierRequest, updateDossierAdministrativeData } from '@/server/dossiers/dossier';
-import { issueAccessLink } from '@/server/dossiers/access';
+import { issueAccessLink, revokeAccessLink } from '@/server/dossiers/access';
 import {
   getDocumentDownloadUrl,
   markDocumentValid,
@@ -437,6 +437,24 @@ export async function closeDossierAction(
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Error al cerrar el expediente',
+    };
+  }
+}
+
+export async function revokeAccessLinkAction(
+  organizationId: string,
+  dossierId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const userId = await requireAuthenticatedUserId();
+  try {
+    await revokeAccessLink({ organizationId, dossierId, revokedBy: userId });
+    revalidatePath('/app', 'layout');
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('[revokeAccessLinkAction] Error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error al revocar el enlace',
     };
   }
 }
