@@ -40,6 +40,7 @@ interface DeclarationFormProps {
   fieldRequirements: RequirementDetail[];
   documentRequirements?: RequirementDetail[];
   values: Record<string, unknown>;
+  correctionsReason?: string | null;
 }
 
 export function DeclarationForm({
@@ -48,6 +49,7 @@ export function DeclarationForm({
   organizationId,
   fieldRequirements,
   values: initialValues,
+  correctionsReason,
 }: DeclarationFormProps) {
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>(() => ({
     ...initialValues,
@@ -193,6 +195,18 @@ export function DeclarationForm({
       </CardHeader>
 
       <CardContent className="space-y-6 pt-6">
+        {correctionsReason && (
+          <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200">
+            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <div className="space-y-1">
+              <span className="font-semibold text-xs block">Se han solicitado correcciones para este expediente:</span>
+              <AlertDescription className="text-xs text-amber-800 dark:text-amber-300">
+                {correctionsReason}
+              </AlertDescription>
+            </div>
+          </Alert>
+        )}
+
         {generalError && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />

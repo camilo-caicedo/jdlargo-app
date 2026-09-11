@@ -36,6 +36,7 @@ export interface DocumentSummaryDTO {
   version: number;
   format: string;
   state: string;
+  rejectionReason?: string | null;
   createdAt: string;
 }
 
@@ -290,28 +291,53 @@ export function DocumentUploadSection({
 
                 <div>
                   {deliveredDoc ? (
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Ya entregado (v{deliveredDoc.version})
-                      </span>
-                      {deliveredDoc.id !== 'just-uploaded' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDownload(deliveredDoc.id)}
-                          disabled={downloadingDocId === deliveredDoc.id}
-                          className="h-7 text-xs gap-1"
-                        >
-                          {downloadingDocId === deliveredDoc.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Download className="w-3 h-3" />
-                          )}
-                          Descargar
-                        </Button>
-                      )}
-                    </div>
+                    deliveredDoc.state === 'rejected' ? (
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400 font-medium">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          Rechazado (v{deliveredDoc.version})
+                        </span>
+                        {deliveredDoc.id !== 'just-uploaded' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDownload(deliveredDoc.id)}
+                            disabled={downloadingDocId === deliveredDoc.id}
+                            className="h-7 text-xs gap-1"
+                          >
+                            {downloadingDocId === deliveredDoc.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Download className="w-3 h-3" />
+                            )}
+                            Descargar
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Ya entregado (v{deliveredDoc.version})
+                        </span>
+                        {deliveredDoc.id !== 'just-uploaded' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDownload(deliveredDoc.id)}
+                            disabled={downloadingDocId === deliveredDoc.id}
+                            className="h-7 text-xs gap-1"
+                          >
+                            {downloadingDocId === deliveredDoc.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Download className="w-3 h-3" />
+                            )}
+                            Descargar
+                          </Button>
+                        )}
+                      </div>
+                    )
                   ) : (
                     <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
                       <Clock className="w-3.5 h-3.5" />
@@ -320,6 +346,17 @@ export function DocumentUploadSection({
                   )}
                 </div>
               </div>
+
+              {/* Banner if rejected with reason */}
+              {deliveredDoc?.state === 'rejected' && deliveredDoc.rejectionReason && (
+                <div className="p-2.5 rounded bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-xs text-red-800 dark:text-red-300 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400 mt-0.5" />
+                  <div>
+                    <span className="font-semibold block">Motivo del rechazo:</span>
+                    <span>{deliveredDoc.rejectionReason}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Optional metadata inputs: emisor, fecha expedición, fecha vencimiento */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -392,7 +429,11 @@ export function DocumentUploadSection({
                         <Upload className="w-3.5 h-3.5" />
                       )}
                       <span>
-                        {deliveredDoc ? 'Reemplazar archivo' : 'Seleccionar archivo'}
+                        {deliveredDoc?.state === 'rejected'
+                          ? 'Cargar nuevo archivo'
+                          : deliveredDoc
+                            ? 'Reemplazar archivo'
+                            : 'Seleccionar archivo'}
                       </span>
                     </div>
                   </label>

@@ -6,7 +6,7 @@ try {
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import postgres from 'postgres';
-import { createOrganizationWithAdmin } from '../organizations/use-cases';
+import { createOrganizationWithAdmin, grantMembership } from '../organizations/use-cases';
 import { seedBaseConfiguration } from '../auth/role-config';
 import {
   createDraftConfiguration,
@@ -128,6 +128,7 @@ async function cleanupTestData() {
 describe('HU-012: Formulario dinámico de identificación', () => {
   let orgId: string;
   let adminUserId: string;
+  let analystUserId: string;
   let typeProveedorId: string;
   let typeConductorId: string;
   let dossierProveedorId: string;
@@ -141,6 +142,13 @@ describe('HU-012: Formulario dinámico de identificación', () => {
     orgId = org.id;
 
     await seedBaseConfiguration(orgId, adminUserId);
+
+    analystUserId = await createTestAuthUser('analyst@test-hu012.com', 'Analyst HU012');
+    await grantMembership(adminUserId, {
+      organizationId: orgId,
+      userId: analystUserId,
+      role: 'compliance_analyst',
+    });
 
     // Create draft configuration and configure custom types and requirements
     const draft = await createDraftConfiguration({ organizationId: orgId, standard: 'SARLAFT' });
@@ -463,5 +471,53 @@ describe('HU-012: Formulario dinámico de identificación', () => {
         dossierId: dossierProveedorId,
       }),
     ).rejects.toThrow();
+  });
+
+  it('HU-014: Un documento rechazado no cuenta como entregado para finalizar declaración', async () => {
+    // Transition from documentos_recibidos to en_revision
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierProveedorId,
+      toState: 'en_revision',
+      actorType: 'system',
+    });
+
+    // Request corrections: en_revision to en_diligenciamiento with reason
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierProveedorId,
+      toState: 'en_diligenciamiento',
+      actorType: 'user',
+      actorId: analystUserId,
+      reason: 'Documento RUT ilegible, requiere reenvío',
+    });
+
+    // Mark doc_rut as rejected
+    await adminSql`
+      UPDATE public.documents
+      SET state = 'rejected', rejection_reason = 'Documento ilegible'
+      WHERE dossier_id = ${dossierProveedorId}::uuid AND document_type = 'doc_rut'
+    `;
+
+    // Attempting to complete declaration should fail because rejected document does not count as delivered
+    await expect(
+      completeDeclaration({
+        organizationId: orgId,
+        dossierId: dossierProveedorId,
+      }),
+    ).rejects.toThrow(IncompleteDeclarationError);
+
+    // Re-upload doc_rut as a valid received document
+    await adminSql`
+      UPDATE public.documents
+      SET state = 'received'
+      WHERE dossier_id = ${dossierProveedorId}::uuid AND document_type = 'doc_rut'
+    `;
+
+    // Now completes successfully
+    await completeDeclaration({
+      organizationId: orgId,
+      dossierId: dossierProveedorId,
+    });
   });
 });

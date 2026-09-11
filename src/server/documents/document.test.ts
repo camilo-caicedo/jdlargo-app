@@ -30,6 +30,8 @@ import {
   getDocumentDownloadUrl,
   getPortalDocumentDownloadUrl,
   detectFormatFromMagicBytes,
+  markDocumentValid,
+  rejectDocument,
 } from './document';
 
 const directUrl = process.env.DIRECT_URL;
@@ -517,6 +519,105 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
       expect(url).toBeDefined();
       expect(url).toContain('token=');
+    });
+  });
+
+  describe('HU-014: Revisión y validación de documentos', () => {
+    it('marca un documento como válido y registra revisor, fecha y auditoría', async () => {
+      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const docToValidate = latest[0];
+
+      await markDocumentValid({
+        organizationId: orgId,
+        dossierId,
+        documentId: docToValidate.id,
+        reviewedBy: analystUserId,
+      });
+
+      const [row] = await adminSql`
+        SELECT state, reviewed_by_user_id, reviewed_at, rejection_reason
+        FROM public.documents
+        WHERE id = ${docToValidate.id}::uuid
+      `;
+
+      expect(row.state).toBe('valid');
+      expect(row.reviewed_by_user_id).toBe(analystUserId);
+      expect(row.reviewed_at).toBeDefined();
+
+      const auditRows = await adminSql`
+        SELECT action, entity_id FROM public.audit_log
+        WHERE action = 'document.marked_valid' AND entity_id = ${docToValidate.id}
+      `;
+      expect(auditRows.length).toBeGreaterThan(0);
+    });
+
+    it('rechaza un documento con motivo y registra en auditoría', async () => {
+      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const docToReject = latest[0];
+
+      await rejectDocument({
+        organizationId: orgId,
+        dossierId,
+        documentId: docToReject.id,
+        reviewedBy: analystUserId,
+        reason: 'Documento borroso o ilegible',
+      });
+
+      const [row] = await adminSql`
+        SELECT state, reviewed_by_user_id, reviewed_at, rejection_reason
+        FROM public.documents
+        WHERE id = ${docToReject.id}::uuid
+      `;
+
+      expect(row.state).toBe('rejected');
+      expect(row.reviewed_by_user_id).toBe(analystUserId);
+      expect(row.rejection_reason).toBe('Documento borroso o ilegible');
+
+      const auditRows = await adminSql`
+        SELECT action, entity_id FROM public.audit_log
+        WHERE action = 'document.rejected' AND entity_id = ${docToReject.id}
+      `;
+      expect(auditRows.length).toBeGreaterThan(0);
+    });
+
+    it('falla al intentar rechazar un documento con motivo vacío', async () => {
+      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const doc = latest[0];
+
+      await expect(
+        rejectDocument({
+          organizationId: orgId,
+          dossierId,
+          documentId: doc.id,
+          reviewedBy: analystUserId,
+          reason: '   ',
+        }),
+      ).rejects.toThrow(/motivo explícito no vacío/);
+    });
+
+    it('rechaza marcar o rechazar documento a usuario sin permiso document:review', async () => {
+      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const doc = latest[0];
+      const unauthorizedUser = await createTestAuthUser(`unauth-${Date.now()}@test-hu014.com`, 'Unauth User');
+
+      await expect(
+        markDocumentValid({
+          organizationId: orgId,
+          dossierId,
+          documentId: doc.id,
+          reviewedBy: unauthorizedUser,
+        }),
+      ).rejects.toThrow();
+
+      await expect(
+        rejectDocument({
+          organizationId: orgId,
+          dossierId,
+          documentId: doc.id,
+          reviewedBy: unauthorizedUser,
+          reason: 'Intento no autorizado',
+        }),
+      ).rejects.toThrow();
     });
   });
 });

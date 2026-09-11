@@ -1,0 +1,235 @@
+import { eq, and } from 'drizzle-orm';
+import { db, DrizzleClient } from '../db/client';
+import { dossiers } from '../db/schema';
+import { getDossierPendingRequirements } from './dossier';
+import { getLatestDeclaredValuesForDossier } from '../assertions/service';
+import { getLatestDocumentsForDossier } from '../documents/document';
+import { executeTransition } from './state-machine';
+import { isRequirementCurrentlyRequired } from '@/lib/requirement-evaluation';
+
+export class IncompleteReviewError extends Error {
+  constructor(
+    public missingFields: string[],
+    public missingOrInvalidDocumentTypes: string[],
+  ) {
+    const parts: string[] = [];
+    if (missingFields.length > 0) {
+      parts.push(`campos obligatorios pendientes: ${missingFields.join(', ')}`);
+    }
+    if (missingOrInvalidDocumentTypes.length > 0) {
+      parts.push(`documentos obligatorios pendientes o no válidos: ${missingOrInvalidDocumentTypes.join(', ')}`);
+    }
+    super(`No se puede dar por revisado el expediente: ${parts.join('; ')}`);
+    this.name = 'IncompleteReviewError';
+  }
+}
+
+/**
+ * Ensures entry transition from 'documentos_recibidos' to 'en_revision' when opened by staff.
+ * Idempotent: if dossier is in any other state, does nothing.
+ * (HU-014 §2.1, §2.5)
+ */
+export async function ensureReviewEntryTransition(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+): Promise<void> {
+  const client = txClient || db;
+
+  const [dossier] = await client
+    .select({
+      id: dossiers.id,
+      state: dossiers.state,
+    })
+    .from(dossiers)
+    .where(
+      and(
+        eq(dossiers.organizationId, organizationId),
+        eq(dossiers.id, dossierId),
+      ),
+    )
+    .limit(1);
+
+  if (!dossier || dossier.state !== 'documentos_recibidos') {
+    return;
+  }
+
+  await executeTransition(
+    {
+      organizationId,
+      dossierId,
+      toState: 'en_revision',
+      actorType: 'system',
+    },
+    txClient,
+  );
+}
+
+export interface ReviewSummary {
+  missingFields: string[];
+  missingOrInvalidDocumentTypes: string[];
+  isReadyForDecision: boolean;
+}
+
+/**
+ * Evaluates current requirements completeness and document validity for a dossier.
+ */
+export async function getReviewSummary(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+): Promise<ReviewSummary> {
+  const client = txClient || db;
+
+  const allRequirements = await getDossierPendingRequirements(organizationId, dossierId, client);
+  const fieldRequirements = allRequirements.filter((r) => r.type === 'field');
+  const documentRequirements = allRequirements.filter((r) => r.type === 'document_type');
+
+  const latestValues = await getLatestDeclaredValuesForDossier(organizationId, dossierId, client);
+  const values: Record<string, unknown> = {};
+  for (const item of latestValues) {
+    values[item.field] = item.value;
+  }
+
+  // 1. Mandatory field requirements
+  const missingFields: string[] = [];
+  for (const req of fieldRequirements) {
+    const isRequired = isRequirementCurrentlyRequired(req, values);
+    if (isRequired) {
+      const val = values[req.key];
+      if (val === undefined || val === null || val === '') {
+        missingFields.push(req.key);
+      }
+    }
+  }
+
+  // 2. Mandatory document requirements: must have a document with state === 'valid'
+  const latestDocs = await getLatestDocumentsForDossier(organizationId, dossierId, client);
+  const validDocTypes = new Set(
+    latestDocs.filter((d) => d.state === 'valid').map((d) => d.documentType),
+  );
+
+  const missingOrInvalidDocumentTypes: string[] = [];
+  for (const req of documentRequirements) {
+    const isRequired = isRequirementCurrentlyRequired(req, values);
+    if (isRequired && !validDocTypes.has(req.key)) {
+      missingOrInvalidDocumentTypes.push(req.key);
+    }
+  }
+
+  return {
+    missingFields,
+    missingOrInvalidDocumentTypes,
+    isReadyForDecision: missingFields.length === 0 && missingOrInvalidDocumentTypes.length === 0,
+  };
+}
+
+/**
+ * Completes review and transitions dossier to 'pendiente_de_decision'.
+ * Throws IncompleteReviewError if any mandatory field is missing or any mandatory document is not 'valid'.
+ * (HU-014 Escenarios: Dar el expediente por listo para decisión / Un expediente incompleto no pasa a decisión)
+ */
+export async function completeReview(
+  input: { organizationId: string; dossierId: string; reviewedBy: string },
+  txClient?: DrizzleClient,
+): Promise<void> {
+  const client = txClient || db;
+
+  const [dossier] = await client
+    .select({
+      id: dossiers.id,
+      state: dossiers.state,
+    })
+    .from(dossiers)
+    .where(
+      and(
+        eq(dossiers.organizationId, input.organizationId),
+        eq(dossiers.id, input.dossierId),
+      ),
+    )
+    .limit(1);
+
+  if (!dossier) {
+    throw new Error('Expediente no encontrado');
+  }
+
+  if (dossier.state !== 'en_revision') {
+    throw new Error(
+      `Solo se puede dar por revisado un expediente en estado 'en_revision' (actual: '${dossier.state}')`,
+    );
+  }
+
+  const summary = await getReviewSummary(input.organizationId, input.dossierId, client);
+
+  if (!summary.isReadyForDecision) {
+    throw new IncompleteReviewError(
+      summary.missingFields,
+      summary.missingOrInvalidDocumentTypes,
+    );
+  }
+
+  // Transition to 'pendiente_de_decision' (permission dossier:edit, no reason required)
+  await executeTransition(
+    {
+      organizationId: input.organizationId,
+      dossierId: input.dossierId,
+      toState: 'pendiente_de_decision',
+      actorType: 'user',
+      actorId: input.reviewedBy,
+    },
+    txClient,
+  );
+}
+
+/**
+ * Requests corrections from the counterparty, returning the dossier to 'en_diligenciamiento'.
+ * Reason is strictly mandatory.
+ * (HU-014 Escenario: Solicitar corrección devuelve el expediente a la contraparte)
+ */
+export async function requestCorrections(
+  input: { organizationId: string; dossierId: string; requestedBy: string; reason: string },
+  txClient?: DrizzleClient,
+): Promise<void> {
+  const client = txClient || db;
+
+  const [dossier] = await client
+    .select({
+      id: dossiers.id,
+      state: dossiers.state,
+    })
+    .from(dossiers)
+    .where(
+      and(
+        eq(dossiers.organizationId, input.organizationId),
+        eq(dossiers.id, input.dossierId),
+      ),
+    )
+    .limit(1);
+
+  if (!dossier) {
+    throw new Error('Expediente no encontrado');
+  }
+
+  if (dossier.state !== 'en_revision') {
+    throw new Error(
+      `Solo se pueden solicitar correcciones para un expediente en estado 'en_revision' (actual: '${dossier.state}')`,
+    );
+  }
+
+  if (!input.reason || input.reason.trim() === '') {
+    throw new Error('La solicitud de corrección exige un motivo explícito no vacío');
+  }
+
+  // Transition to 'en_diligenciamiento' (permission dossier:review, reason mandatory)
+  await executeTransition(
+    {
+      organizationId: input.organizationId,
+      dossierId: input.dossierId,
+      toState: 'en_diligenciamiento',
+      actorType: 'user',
+      actorId: input.requestedBy,
+      reason: input.reason.trim(),
+    },
+    txClient,
+  );
+}

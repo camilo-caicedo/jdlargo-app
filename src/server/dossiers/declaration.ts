@@ -233,9 +233,11 @@ export async function completeDeclaration(
       }
     }
 
-    // 4. Para cada requisito de documento obligatorio, verificar que exista en getLatestDocumentsForDossier
+    // 4. Para cada requisito de documento obligatorio, verificar que exista en getLatestDocumentsForDossier no rechazado
     const latestDocs = await getLatestDocumentsForDossier(input.organizationId, input.dossierId, tx);
-    const deliveredDocTypes = new Set(latestDocs.map((d) => d.documentType));
+    const deliveredDocTypes = new Set(
+      latestDocs.filter((d) => d.state !== 'rejected').map((d) => d.documentType),
+    );
 
     const missingDocumentTypes: string[] = [];
     for (const req of documentRequirements) {

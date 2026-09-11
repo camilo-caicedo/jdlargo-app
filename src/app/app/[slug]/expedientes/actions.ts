@@ -6,7 +6,15 @@ import { z } from 'zod';
 import { requireAuthenticatedUserId } from '@/server/auth/session';
 import { createDossierRequest, updateDossierAdministrativeData } from '@/server/dossiers/dossier';
 import { issueAccessLink } from '@/server/dossiers/access';
-import { getDocumentDownloadUrl } from '@/server/documents/document';
+import {
+  getDocumentDownloadUrl,
+  markDocumentValid,
+  rejectDocument,
+} from '@/server/documents/document';
+import {
+  completeReview,
+  requestCorrections,
+} from '@/server/dossiers/review';
 
 const createDossierSchema = z.object({
   counterpartyTypeName: z.string().min(1, 'Seleccione un tipo de contraparte'),
@@ -228,4 +236,117 @@ export async function downloadDocumentAction(
     };
   }
 }
+
+export async function markDocumentValidAction(
+  organizationId: string,
+  dossierId: string,
+  documentId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const userId = await requireAuthenticatedUserId();
+
+  try {
+    await markDocumentValid({
+      organizationId,
+      dossierId,
+      documentId,
+      reviewedBy: userId,
+    });
+
+    revalidatePath('/app', 'layout');
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('[markDocumentValidAction] Error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error al marcar documento como válido',
+    };
+  }
+}
+
+export async function rejectDocumentAction(
+  organizationId: string,
+  dossierId: string,
+  documentId: string,
+  reason: string,
+): Promise<{ success: boolean; error?: string }> {
+  const userId = await requireAuthenticatedUserId();
+
+  if (!reason || reason.trim() === '') {
+    return { success: false, error: 'Debe indicar un motivo explícito para rechazar el documento' };
+  }
+
+  try {
+    await rejectDocument({
+      organizationId,
+      dossierId,
+      documentId,
+      reviewedBy: userId,
+      reason: reason.trim(),
+    });
+
+    revalidatePath('/app', 'layout');
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('[rejectDocumentAction] Error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error al rechazar el documento',
+    };
+  }
+}
+
+export async function requestCorrectionsAction(
+  organizationId: string,
+  dossierId: string,
+  reason: string,
+): Promise<{ success: boolean; error?: string }> {
+  const userId = await requireAuthenticatedUserId();
+
+  if (!reason || reason.trim() === '') {
+    return { success: false, error: 'Debe ingresar un motivo para solicitar correcciones' };
+  }
+
+  try {
+    await requestCorrections({
+      organizationId,
+      dossierId,
+      requestedBy: userId,
+      reason: reason.trim(),
+    });
+
+    revalidatePath('/app', 'layout');
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('[requestCorrectionsAction] Error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error al solicitar correcciones',
+    };
+  }
+}
+
+export async function completeReviewAction(
+  organizationId: string,
+  dossierId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const userId = await requireAuthenticatedUserId();
+
+  try {
+    await completeReview({
+      organizationId,
+      dossierId,
+      reviewedBy: userId,
+    });
+
+    revalidatePath('/app', 'layout');
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('[completeReviewAction] Error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error al dar por revisado el expediente',
+    };
+  }
+}
+
 

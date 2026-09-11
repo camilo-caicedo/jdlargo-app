@@ -335,6 +335,9 @@ export const documents = pgTable('documents', {
   }).notNull().default('received'),
   uploadedByType: text('uploaded_by_type', { enum: ['user', 'counterparty'] }).notNull(),
   uploadedByUserId: uuid('uploaded_by_user_id').references(() => users.id),
+  reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  rejectionReason: text('rejection_reason'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex('documents_dossier_type_hash_unique').on(t.dossierId, t.documentType, t.hash),

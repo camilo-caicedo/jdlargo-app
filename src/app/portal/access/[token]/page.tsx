@@ -211,8 +211,19 @@ export default async function PortalAccessPage({
       );
     }
 
-    const formData = await getDeclarationForm(result.organizationId, result.dossierId);
-    const latestDocs = await getLatestDocumentsForDossier(result.organizationId, result.dossierId);
+    const [formData, latestDocs, history] = await Promise.all([
+      getDeclarationForm(result.organizationId, result.dossierId),
+      getLatestDocumentsForDossier(result.organizationId, result.dossierId),
+      import('@/server/dossiers/state-machine').then((m) =>
+        m.getDossierHistory(result.organizationId!, result.dossierId!),
+      ),
+    ]);
+
+    // Find the latest transition to en_diligenciamiento from en_revision (corrections requested)
+    const latestCorrectionTransition = history.find(
+      (h) => h.fromState === 'en_revision' && h.toState === 'en_diligenciamiento',
+    );
+    const correctionsReason = latestCorrectionTransition?.reason || null;
 
     const initialDocsDTO = latestDocs.map((d) => ({
       id: d.id,
@@ -220,6 +231,7 @@ export default async function PortalAccessPage({
       version: d.version,
       format: d.format,
       state: d.state,
+      rejectionReason: d.rejectionReason,
       createdAt: d.createdAt.toISOString(),
     }));
 
@@ -232,6 +244,7 @@ export default async function PortalAccessPage({
           fieldRequirements={formData.fieldRequirements}
           documentRequirements={formData.documentRequirements}
           values={formData.values}
+          correctionsReason={correctionsReason}
         />
         <DocumentUploadSection
           token={token}

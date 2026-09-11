@@ -10,18 +10,19 @@ try {
   // ignore
 }
 
-// Load .env.local manually if present
-const envPath = path.resolve(__dirname, '.env.local');
-if (fs.existsSync(envPath)) {
-  const content = fs.readFileSync(envPath, 'utf8');
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#')) {
-      const idx = trimmed.indexOf('=');
-      if (idx !== -1) {
-        const key = trimmed.slice(0, idx).trim();
-        const val = trimmed.slice(idx + 1).trim();
-        if (!process.env[key]) {
+// Load env files in reverse priority: .env.local first, then .env.test, then .env.test.local
+const envFiles = ['.env.local', '.env.test', '.env.test.local'];
+for (const file of envFiles) {
+  const envPath = path.resolve(__dirname, file);
+  if (fs.existsSync(envPath)) {
+    const content = fs.readFileSync(envPath, 'utf8');
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const idx = trimmed.indexOf('=');
+        if (idx !== -1) {
+          const key = trimmed.slice(0, idx).trim();
+          const val = trimmed.slice(idx + 1).trim();
           process.env[key] = val;
         }
       }

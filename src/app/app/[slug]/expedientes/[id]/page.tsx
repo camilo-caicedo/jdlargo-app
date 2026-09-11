@@ -8,19 +8,23 @@ import { getActiveAccessLinkForDossier } from '@/server/dossiers/access';
 import { getDossierHistory } from '@/server/dossiers/state-machine';
 import { getConsentForDossier } from '@/server/consent/consent';
 import { getLatestDocumentsForDossier } from '@/server/documents/document';
+import { ensureReviewEntryTransition } from '@/server/dossiers/review';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ArrowLeft, History } from 'lucide-react';
 import { AccessLinkBox } from './access-link-box';
 import { ConsentCard } from './consent-card';
 import { EditDossierBox } from './edit-dossier-box';
 import { DocumentsCard } from './documents-card';
+import { ReviewActionsBox } from './review-actions-box';
 
 function getHumanState(state: string) {
   switch (state) {
     case 'borrador': return { label: 'Borrador', color: 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200' };
     case 'enviada': return { label: 'Enviada', color: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' };
     case 'en_diligenciamiento': return { label: 'En diligenciamiento', color: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300' };
+    case 'documentos_recibidos': return { label: 'Documentos recibidos', color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' };
     case 'en_revision': return { label: 'En revisión', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' };
+    case 'pendiente_de_decision': return { label: 'Pendiente de decisión', color: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' };
     case 'aprobado': return { label: 'Aprobado', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' };
     case 'rechazado': return { label: 'Rechazado', color: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300' };
     case 'rechazada_por_contraparte': return { label: 'Rechazada por contraparte', color: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' };
@@ -50,6 +54,10 @@ export default async function DossierDetailPage({
   }
 
   const organizationId = currentMembership.organizationId;
+
+  // Auto-transition from documentos_recibidos -> en_revision if applicable (HU-014)
+  await ensureReviewEntryTransition(organizationId, id);
+
   const dossier = await getDossierById(organizationId, id);
 
   if (!dossier) {
@@ -62,6 +70,14 @@ export default async function DossierDetailPage({
 
   const canViewDocuments = (
     await checkUserPermission(userId, organizationId, 'document:view')
+  ).granted;
+
+  const canReviewDocuments = (
+    await checkUserPermission(userId, organizationId, 'document:review')
+  ).granted;
+
+  const canReviewDossier = (
+    await checkUserPermission(userId, organizationId, 'dossier:review')
   ).granted;
 
   // Load requirements & active link & history & consent & members & documents in parallel
@@ -82,6 +98,9 @@ export default async function DossierDetailPage({
     state: d.state,
     size: d.size,
     uploadedByType: d.uploadedByType,
+    rejectionReason: d.rejectionReason,
+    reviewedByUserId: d.reviewedByUserId,
+    reviewedAt: d.reviewedAt ? d.reviewedAt.toISOString() : null,
     createdAt: d.createdAt.toISOString(),
   }));
 
@@ -107,6 +126,11 @@ export default async function DossierDetailPage({
         </div>
 
         <div className="flex items-center gap-3">
+          <ReviewActionsBox
+            organizationId={organizationId}
+            dossierId={dossier.id}
+            canReview={canReviewDossier && dossier.state === 'en_revision'}
+          />
           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${stateBadge.color}`}>
             {stateBadge.label}
           </span>
@@ -205,11 +229,13 @@ export default async function DossierDetailPage({
             </CardContent>
           </Card>
 
-          {/* Documents Card (HU-013) */}
+          {/* Documents Card (HU-013, HU-014) */}
           {canViewDocuments && (
             <DocumentsCard
               organizationId={organizationId}
               dossierId={id}
+              dossierState={dossier.state}
+              canReviewDocuments={canReviewDocuments}
               documents={docsDTO}
             />
           )}

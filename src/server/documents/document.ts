@@ -437,6 +437,9 @@ export interface DocumentSummary {
   state: string;
   uploadedByType: string;
   uploadedByUserId: string | null;
+  rejectionReason: string | null;
+  reviewedByUserId: string | null;
+  reviewedAt: Date | null;
   createdAt: Date;
 }
 
@@ -477,6 +480,9 @@ export async function getLatestDocumentsForDossier(
         state: doc.state,
         uploadedByType: doc.uploadedByType,
         uploadedByUserId: doc.uploadedByUserId,
+        rejectionReason: doc.rejectionReason,
+        reviewedByUserId: doc.reviewedByUserId,
+        reviewedAt: doc.reviewedAt,
         createdAt: doc.createdAt,
       });
     }
@@ -661,3 +667,169 @@ export async function getPortalDocumentDownloadUrl(input: {
 
   return data.signedUrl;
 }
+
+/**
+ * Marks a document as 'valid' by an authorized reviewer (document:review).
+ * (HU-014 Escenario: Marcar un documento como válido)
+ */
+export async function markDocumentValid(
+  input: { organizationId: string; dossierId: string; documentId: string; reviewedBy: string },
+  txClient?: DrizzleClient,
+): Promise<void> {
+  // 1. Enforce permission 'document:review'
+  await enforceUserPermission(
+    {
+      userId: input.reviewedBy,
+      organizationId: input.organizationId,
+    },
+    'document:review',
+    { dossierId: input.dossierId, documentId: input.documentId },
+    txClient,
+  );
+
+  const execute = async (tx: DatabaseTransaction) => {
+    // 2. Verify document belongs to dossier and organization
+    const [doc] = await tx
+      .select()
+      .from(documents)
+      .where(
+        and(
+          eq(documents.organizationId, input.organizationId),
+          eq(documents.dossierId, input.dossierId),
+          eq(documents.id, input.documentId),
+        ),
+      )
+      .limit(1);
+
+    if (!doc) {
+      throw new Error('Documento no encontrado en el expediente especificado');
+    }
+
+    const reviewedAt = new Date();
+
+    // 3. Update state, reviewedByUserId, reviewedAt
+    await tx
+      .update(documents)
+      .set({
+        state: 'valid',
+        reviewedByUserId: input.reviewedBy,
+        reviewedAt,
+      })
+      .where(eq(documents.id, input.documentId));
+
+    // 4. Register audit event
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorUserId: input.reviewedBy,
+        action: 'document.marked_valid',
+        entity: 'document',
+        entityId: input.documentId,
+        metadata: {
+          dossierId: input.dossierId,
+          documentType: doc.documentType,
+          version: doc.version,
+          previousState: doc.state,
+        },
+      },
+      tx,
+    );
+  };
+
+  if (txClient && 'execute' in txClient) {
+    await execute(txClient as DatabaseTransaction);
+  } else {
+    await db.transaction(execute);
+  }
+}
+
+/**
+ * Rejects a document with a mandatory reason by an authorized reviewer (document:review).
+ * (HU-014 Escenario: Rechazar un documento sin perder lo demás)
+ */
+export async function rejectDocument(
+  input: {
+    organizationId: string;
+    dossierId: string;
+    documentId: string;
+    reviewedBy: string;
+    reason: string;
+  },
+  txClient?: DrizzleClient,
+): Promise<void> {
+  // Business rule: reason must be non-empty
+  if (!input.reason || input.reason.trim() === '') {
+    throw new Error('El rechazo de un documento exige un motivo explícito no vacío');
+  }
+
+  // 1. Enforce permission 'document:review'
+  await enforceUserPermission(
+    {
+      userId: input.reviewedBy,
+      organizationId: input.organizationId,
+    },
+    'document:review',
+    { dossierId: input.dossierId, documentId: input.documentId, reason: input.reason },
+    txClient,
+  );
+
+  const execute = async (tx: DatabaseTransaction) => {
+    // 2. Verify document belongs to dossier and organization
+    const [doc] = await tx
+      .select()
+      .from(documents)
+      .where(
+        and(
+          eq(documents.organizationId, input.organizationId),
+          eq(documents.dossierId, input.dossierId),
+          eq(documents.id, input.documentId),
+        ),
+      )
+      .limit(1);
+
+    if (!doc) {
+      throw new Error('Documento no encontrado en el expediente especificado');
+    }
+
+    const reviewedAt = new Date();
+
+    // 3. Update state, rejectionReason, reviewedByUserId, reviewedAt
+    await tx
+      .update(documents)
+      .set({
+        state: 'rejected',
+        rejectionReason: input.reason.trim(),
+        reviewedByUserId: input.reviewedBy,
+        reviewedAt,
+      })
+      .where(eq(documents.id, input.documentId));
+
+    // 4. Register audit event
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorUserId: input.reviewedBy,
+        action: 'document.rejected',
+        entity: 'document',
+        entityId: input.documentId,
+        metadata: {
+          dossierId: input.dossierId,
+          documentType: doc.documentType,
+          version: doc.version,
+          previousState: doc.state,
+          rejectionReason: input.reason.trim(),
+        },
+      },
+      tx,
+    );
+  };
+
+  if (txClient && 'execute' in txClient) {
+    await execute(txClient as DatabaseTransaction);
+  } else {
+    await db.transaction(execute);
+  }
+}
+
