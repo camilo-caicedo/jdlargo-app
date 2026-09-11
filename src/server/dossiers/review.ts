@@ -1,5 +1,5 @@
 import { eq, and } from 'drizzle-orm';
-import { db, DrizzleClient } from '../db/client';
+import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
 import { dossiers } from '../db/schema';
 import { getDossierPendingRequirements } from './dossier';
 import { getLatestDeclaredValuesForDossier } from '../assertions/service';
@@ -235,43 +235,52 @@ export async function completeReview(
     txClient,
   );
 
-  // d. Transition to 'pendiente_de_decision'
-  await executeTransition(
-    {
-      organizationId: input.organizationId,
-      dossierId: input.dossierId,
-      toState: 'pendiente_de_decision',
-      actorType: 'user',
-      actorId: input.reviewedBy,
-    },
-    txClient,
-  );
-
-  // e. Log audit event dossier.review_completed_with_exception
+  // d. Transition to 'pendiente_de_decision' + e. log the exception audit event, atomically:
+  // both must land together, or neither — an approved-with-pending dossier with no audit
+  // trail of why would defeat PA-029's "advertencia explícita ... queda registrada".
   const skippedRequirementKeys = [
     ...summary.missingFields,
     ...summary.missingOrInvalidDocumentTypes,
   ];
 
-  await logAuditEvent(
-    {
-      organizationId: input.organizationId,
-      actorType: 'user',
-      actorUserId: input.reviewedBy,
-      action: 'dossier.review_completed_with_exception',
-      entity: 'dossier',
-      entityId: input.dossierId,
-      configurationVersionId: dossier.configurationVersionId,
-      reason: input.override.reason.trim(),
-      metadata: {
-        overridden_by: input.reviewedBy,
-        reason: input.override.reason.trim(),
-        skipped_requirement_keys: skippedRequirementKeys,
+  const applyOverride = async (tx: DatabaseTransaction) => {
+    await executeTransition(
+      {
+        organizationId: input.organizationId,
+        dossierId: input.dossierId,
+        toState: 'pendiente_de_decision',
+        actorType: 'user',
+        actorId: input.reviewedBy,
       },
-      origin: { actor: 'user', action: 'completeReview' },
-    },
-    txClient,
-  );
+      tx,
+    );
+
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorUserId: input.reviewedBy,
+        action: 'dossier.review_completed_with_exception',
+        entity: 'dossier',
+        entityId: input.dossierId,
+        configurationVersionId: dossier.configurationVersionId,
+        reason: input.override!.reason.trim(),
+        metadata: {
+          overridden_by: input.reviewedBy,
+          reason: input.override!.reason.trim(),
+          skipped_requirement_keys: skippedRequirementKeys,
+        },
+        origin: { actor: 'user', action: 'completeReview' },
+      },
+      tx,
+    );
+  };
+
+  if (txClient && 'execute' in txClient) {
+    await applyOverride(txClient as DatabaseTransaction);
+  } else {
+    await db.transaction(applyOverride);
+  }
 }
 
 /**
