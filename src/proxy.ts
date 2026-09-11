@@ -24,11 +24,11 @@ if (redisUrl && redisToken) {
       prefix: 'ratelimit:portal',
     });
   } catch (err) {
-    console.warn('[middleware] Upstash Ratelimit initialization failed:', err);
+    console.warn('[proxy] Upstash Ratelimit initialization failed:', err);
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Block 1: Rate Limiting for /portal/* (HU-010), /registro (HU-060) and /recuperar-contrasena (HU-057)
   if (
     request.nextUrl.pathname.startsWith('/portal') ||
@@ -66,7 +66,7 @@ export async function middleware(request: NextRequest) {
           );
         }
       } catch (err) {
-        console.warn('[middleware] Ratelimit check error:', err);
+        console.warn('[proxy] Ratelimit check error:', err);
       }
     }
 
