@@ -12,10 +12,21 @@ import {
   getLatestDeclaredValuesForDossier,
 } from '../assertions/service';
 import { executeTransition } from './state-machine';
+import { getLatestDocumentsForDossier } from '../documents/document';
 
 export class IncompleteDeclarationError extends Error {
-  constructor(public missingFields: string[]) {
-    super(`Faltan campos obligatorios por diligenciar: ${missingFields.join(', ')}`);
+  constructor(
+    public missingFields: string[],
+    public missingDocumentTypes: string[] = [],
+  ) {
+    const parts: string[] = [];
+    if (missingFields.length > 0) {
+      parts.push(`campos obligatorios: ${missingFields.join(', ')}`);
+    }
+    if (missingDocumentTypes.length > 0) {
+      parts.push(`documentos obligatorios: ${missingDocumentTypes.join(', ')}`);
+    }
+    super(`Faltan requisitos obligatorios por entregar (${parts.join('; ')})`);
     this.name = 'IncompleteDeclarationError';
   }
 }
@@ -199,9 +210,10 @@ export async function completeDeclaration(
       );
     }
 
-    // 2. Cargar requisitos type: 'field' + getLatestDeclaredValuesForDossier
+    // 2. Cargar requisitos (field y document_type) + getLatestDeclaredValuesForDossier
     const allRequirements = await getDossierPendingRequirements(input.organizationId, input.dossierId, tx);
     const fieldRequirements = allRequirements.filter((r) => r.type === 'field');
+    const documentRequirements = allRequirements.filter((r) => r.type === 'document_type');
 
     const latestValues = await getLatestDeclaredValuesForDossier(input.organizationId, input.dossierId, tx);
     const values: Record<string, unknown> = {};
@@ -209,7 +221,7 @@ export async function completeDeclaration(
       values[item.field] = item.value;
     }
 
-    // 3. Para cada requisito, isRequirementCurrentlyRequired(req, values)
+    // 3. Para cada requisito de campo, isRequirementCurrentlyRequired(req, values)
     const missingFields: string[] = [];
     for (const req of fieldRequirements) {
       const isRequired = isRequirementCurrentlyRequired(req, values);
@@ -221,12 +233,24 @@ export async function completeDeclaration(
       }
     }
 
-    // 4. Si missingFields.length > 0, lanzar IncompleteDeclarationError
-    if (missingFields.length > 0) {
-      throw new IncompleteDeclarationError(missingFields);
+    // 4. Para cada requisito de documento obligatorio, verificar que exista en getLatestDocumentsForDossier
+    const latestDocs = await getLatestDocumentsForDossier(input.organizationId, input.dossierId, tx);
+    const deliveredDocTypes = new Set(latestDocs.map((d) => d.documentType));
+
+    const missingDocumentTypes: string[] = [];
+    for (const req of documentRequirements) {
+      const isRequired = isRequirementCurrentlyRequired(req, values);
+      if (isRequired && !deliveredDocTypes.has(req.key)) {
+        missingDocumentTypes.push(req.key);
+      }
     }
 
-    // 5. Transición a 'documentos_recibidos' con actorType 'counterparty'
+    // 5. Si faltan campos o documentos obligatorios, lanzar IncompleteDeclarationError
+    if (missingFields.length > 0 || missingDocumentTypes.length > 0) {
+      throw new IncompleteDeclarationError(missingFields, missingDocumentTypes);
+    }
+
+    // 6. Transición a 'documentos_recibidos' con actorType 'counterparty'
     await executeTransition(
       {
         organizationId: input.organizationId,

@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { executePrivilegedSystemOperation } from '@/server/privileged/system-execution';
 import { recordConsent } from '@/server/consent/consent';
+import { verifyTokenGrantsAccess } from '@/server/privileged/portal-access';
 
 export interface ConsentActionResult {
   success: boolean;
@@ -18,6 +19,10 @@ export async function submitConsentAction(
   result: 'accepted' | 'not_accepted',
 ): Promise<ConsentActionResult> {
   try {
+    if (!(await verifyTokenGrantsAccess(token, dossierId, organizationId))) {
+      return { success: false, error: 'El enlace de acceso no es válido para este expediente' };
+    }
+
     const headerStore = await headers();
     const ipAddress =
       headerStore.get('x-forwarded-for')?.split(',')[0].trim() ||

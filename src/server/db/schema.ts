@@ -319,3 +319,24 @@ export const consents = pgTable('consents', {
   uniqueIndex('consents_dossier_unique').on(t.dossierId),
 ]).enableRLS();
 
+// documents — evidencia documental cargada para requisitos de tipo 'document_type' (HU-013)
+export const documents = pgTable('documents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  documentType: text('document_type').notNull(), // = requirement.key, type: 'document_type'
+  version: integer('version').notNull(),
+  storagePath: text('storage_path').notNull(),
+  hash: text('hash').notNull(), // SHA-256 real, calculado al confirmar
+  size: integer('size').notNull(), // bytes, real (no declarado)
+  format: text('format', { enum: ['pdf', 'jpg', 'png'] }).notNull(), // real, por magic bytes
+  state: text('state', {
+    enum: ['received', 'under_review', 'valid', 'requires_review', 'rejected'],
+  }).notNull().default('received'),
+  uploadedByType: text('uploaded_by_type', { enum: ['user', 'counterparty'] }).notNull(),
+  uploadedByUserId: uuid('uploaded_by_user_id').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('documents_dossier_type_hash_unique').on(t.dossierId, t.documentType, t.hash),
+]).enableRLS();
+

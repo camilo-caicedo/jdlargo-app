@@ -6,6 +6,7 @@
     "permissions": [
       "dossier:create",
       "dossier:edit",
+      "document:view",
       "configuration:view",
       "configuration:publish",
       "configuration:administer",

@@ -7,6 +7,7 @@ import {
   completeDeclaration,
   IncompleteDeclarationError,
 } from '@/server/dossiers/declaration';
+import { verifyTokenGrantsAccess } from '@/server/privileged/portal-access';
 
 export async function saveDeclaredFieldsAction(
   token: string,
@@ -15,6 +16,10 @@ export async function saveDeclaredFieldsAction(
   values: Record<string, unknown>,
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!(await verifyTokenGrantsAccess(token, dossierId, organizationId))) {
+      return { success: false, error: 'El enlace de acceso no es válido para este expediente' };
+    }
+
     await executePrivilegedSystemOperation(
       {
         action: 'portal.save_declaration',
@@ -54,6 +59,9 @@ export async function completeDeclarationAction(
   organizationId: string,
 ): Promise<{ success: boolean; error?: string; missingFields?: string[] }> {
   try {
+    if (!(await verifyTokenGrantsAccess(token, dossierId, organizationId))) {
+      return { success: false, error: 'El enlace de acceso no es válido para este expediente' };
+    }
     await executePrivilegedSystemOperation(
       {
         action: 'portal.complete_declaration',

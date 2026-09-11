@@ -124,6 +124,52 @@ export async function resolveAccessToken(
 }
 
 /**
+ * Validates whether a raw access token grants access to a specific dossier and organization.
+ * Used by portal Server Actions to prevent cross-dossier / cross-tenant tampering.
+ * (HU-013 §2.2)
+ */
+export async function verifyTokenGrantsAccess(
+  rawToken: string,
+  claimedDossierId: string,
+  claimedOrganizationId: string,
+): Promise<boolean> {
+  const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+
+  const [tokenRecord] = await adminDb
+    .select({
+      id: dossierAccessTokens.id,
+      organizationId: dossierAccessTokens.organizationId,
+      dossierId: dossierAccessTokens.dossierId,
+      state: dossierAccessTokens.state,
+      expiresAt: dossierAccessTokens.expiresAt,
+    })
+    .from(dossierAccessTokens)
+    .where(eq(dossierAccessTokens.tokenHash, tokenHash))
+    .limit(1);
+
+  if (!tokenRecord) {
+    return false;
+  }
+
+  if (tokenRecord.state === 'revoked' || tokenRecord.state === 'replaced') {
+    return false;
+  }
+
+  if (new Date() > new Date(tokenRecord.expiresAt)) {
+    return false;
+  }
+
+  if (
+    tokenRecord.dossierId !== claimedDossierId ||
+    tokenRecord.organizationId !== claimedOrganizationId
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Generates and sends a 6-digit one-time code for the given token.
  * Stores the SHA-256 hash of the code in dossier_access_otp_codes.
  * Uses recipientEmail from dossierAccessTokens.

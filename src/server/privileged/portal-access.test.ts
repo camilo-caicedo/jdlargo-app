@@ -18,6 +18,7 @@ import {
   requestOtpCode,
   verifyOtpCode,
   ensureEntryTransition,
+  verifyTokenGrantsAccess,
 } from './portal-access';
 import { mockSentEmails } from '../notifications/email';
 
@@ -482,4 +483,98 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
     });
     expect(activeResult.outcome).toBe('granted');
   }, 60000);
+
+  describe('HU-013: verifyTokenGrantsAccess', () => {
+    it('valida token legítimo, y rechaza token cruzado entre expedientes, revocado o expirado', async () => {
+      const adminUser = await createTestAuthUser('admin-vt@test-hu010-portal.com', 'Admin VT');
+      const analystUser = await createTestAuthUser('analyst-vt@test-hu010-portal.com', 'Analyst VT');
+      const orgA = await createOrganizationWithAdmin(adminUser, { name: 'Portal Org 1' });
+      await seedBaseConfiguration(orgA.id, adminUser);
+      await grantMembership(adminUser, { organizationId: orgA.id, userId: analystUser, role: 'compliance_analyst' });
+
+      const draft = await createDraftConfiguration({ organizationId: orgA.id, standard: 'SARLAFT' });
+      const provType = await addCounterpartyType({
+        organizationId: orgA.id,
+        configurationVersionId: draft.versionId,
+        name: 'proveedor',
+        nature: 'legal_entity',
+      });
+      await addRequirement({
+        organizationId: orgA.id,
+        configurationVersionId: draft.versionId,
+        counterpartyTypeId: provType.id,
+        standard: 'SARLAFT',
+        type: 'field',
+        key: 'tax_id',
+        mandatory: 'always',
+        validation: { dataType: 'string' },
+      });
+      await publishDraftConfiguration({
+        organizationId: orgA.id,
+        versionId: draft.versionId,
+        publishedBy: adminUser,
+        reason: 'Publish proveedor type',
+      });
+
+      // Create Dossier A
+      const dossierA = await createDossierRequest({
+        organizationId: orgA.id,
+        requestedBy: analystUser,
+        counterpartyTypeName: 'proveedor',
+        party: {
+          identificationType: 'NIT',
+          identificationNumber: '900111222',
+          declaredName: 'Empresa A',
+        },
+        internalOwnerId: analystUser,
+      });
+
+      // Create Dossier B
+      const dossierB = await createDossierRequest({
+        organizationId: orgA.id,
+        requestedBy: analystUser,
+        counterpartyTypeName: 'proveedor',
+        party: {
+          identificationType: 'NIT',
+          identificationNumber: '900333444',
+          declaredName: 'Empresa B',
+        },
+        internalOwnerId: analystUser,
+      });
+
+      const linkA = await issueAccessLink({
+        organizationId: orgA.id,
+        dossierId: dossierA.id,
+        issuedBy: analystUser,
+        requiresSecondFactor: false,
+        recipientEmail: 'empresaA@test.com',
+      });
+
+      // 1. Token A with Dossier A -> true
+      const valid = await verifyTokenGrantsAccess(linkA.rawToken, dossierA.id, orgA.id);
+      expect(valid).toBe(true);
+
+      // 2. Token A with Dossier B (cross-dossier attack) -> false
+      const crossDossier = await verifyTokenGrantsAccess(linkA.rawToken, dossierB.id, orgA.id);
+      expect(crossDossier).toBe(false);
+
+      // 3. Token A with wrong org -> false
+      const crossTenant = await verifyTokenGrantsAccess(linkA.rawToken, dossierA.id, '00000000-0000-0000-0000-000000000000');
+      expect(crossTenant).toBe(false);
+
+      // 4. Token A after revoke -> false
+      await revokeAccessLink({
+        organizationId: orgA.id,
+        dossierId: dossierA.id,
+        revokedBy: analystUser,
+      });
+      const revoked = await verifyTokenGrantsAccess(linkA.rawToken, dossierA.id, orgA.id);
+      expect(revoked).toBe(false);
+
+      // 5. Invalid / fabricated raw token -> false
+      const fakeToken = await verifyTokenGrantsAccess('fake-token-never-issued-12345', dossierA.id, orgA.id);
+      expect(fakeToken).toBe(false);
+    }, 60000);
+  });
 });
+

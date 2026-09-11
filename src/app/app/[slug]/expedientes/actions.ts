@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { requireAuthenticatedUserId } from '@/server/auth/session';
 import { createDossierRequest, updateDossierAdministrativeData } from '@/server/dossiers/dossier';
 import { issueAccessLink } from '@/server/dossiers/access';
+import { getDocumentDownloadUrl } from '@/server/documents/document';
 
 const createDossierSchema = z.object({
   counterpartyTypeName: z.string().min(1, 'Seleccione un tipo de contraparte'),
@@ -202,3 +203,29 @@ export async function updateDossierAction(
     };
   }
 }
+
+export async function downloadDocumentAction(
+  organizationId: string,
+  dossierId: string,
+  documentId: string,
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  const userId = await requireAuthenticatedUserId();
+
+  try {
+    const url = await getDocumentDownloadUrl({
+      organizationId,
+      dossierId,
+      documentId,
+      requestedBy: { userId },
+    });
+
+    return { success: true, url };
+  } catch (err: unknown) {
+    console.error('[downloadDocumentAction] Error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error al generar la URL de descarga',
+    };
+  }
+}
+

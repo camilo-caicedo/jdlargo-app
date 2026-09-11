@@ -7,11 +7,13 @@ import { getDossierById, getDossierPendingRequirements } from '@/server/dossiers
 import { getActiveAccessLinkForDossier } from '@/server/dossiers/access';
 import { getDossierHistory } from '@/server/dossiers/state-machine';
 import { getConsentForDossier } from '@/server/consent/consent';
+import { getLatestDocumentsForDossier } from '@/server/documents/document';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ArrowLeft, History } from 'lucide-react';
 import { AccessLinkBox } from './access-link-box';
 import { ConsentCard } from './consent-card';
 import { EditDossierBox } from './edit-dossier-box';
+import { DocumentsCard } from './documents-card';
 
 function getHumanState(state: string) {
   switch (state) {
@@ -58,14 +60,30 @@ export default async function DossierDetailPage({
     await checkUserPermission(userId, organizationId, 'dossier:edit')
   ).granted;
 
-  // Load requirements & active link & history & consent & members in parallel
-  const [requirements, activeLink, history, consent, rawMembers] = await Promise.all([
+  const canViewDocuments = (
+    await checkUserPermission(userId, organizationId, 'document:view')
+  ).granted;
+
+  // Load requirements & active link & history & consent & members & documents in parallel
+  const [requirements, activeLink, history, consent, rawMembers, rawDocs] = await Promise.all([
     getDossierPendingRequirements(organizationId, id),
     getActiveAccessLinkForDossier(organizationId, id),
     getDossierHistory(organizationId, id),
     getConsentForDossier(organizationId, id),
     listMembers(userId, organizationId),
+    canViewDocuments ? getLatestDocumentsForDossier(organizationId, id) : Promise.resolve([]),
   ]);
+
+  const docsDTO = rawDocs.map((d) => ({
+    id: d.id,
+    documentType: d.documentType,
+    version: d.version,
+    format: d.format,
+    state: d.state,
+    size: d.size,
+    uploadedByType: d.uploadedByType,
+    createdAt: d.createdAt.toISOString(),
+  }));
 
   const members = rawMembers.map((m) => ({
     id: m.user.id,
@@ -186,6 +204,15 @@ export default async function DossierDetailPage({
               </ul>
             </CardContent>
           </Card>
+
+          {/* Documents Card (HU-013) */}
+          {canViewDocuments && (
+            <DocumentsCard
+              organizationId={organizationId}
+              dossierId={id}
+              documents={docsDTO}
+            />
+          )}
         </div>
 
         {/* Audit & State history & Consent (Right 1 col) */}

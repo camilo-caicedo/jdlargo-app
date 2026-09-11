@@ -30,7 +30,6 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  Info,
   Clock,
 } from 'lucide-react';
 
@@ -39,7 +38,7 @@ interface DeclarationFormProps {
   dossierId: string;
   organizationId: string;
   fieldRequirements: RequirementDetail[];
-  documentRequirements: RequirementDetail[];
+  documentRequirements?: RequirementDetail[];
   values: Record<string, unknown>;
 }
 
@@ -48,7 +47,6 @@ export function DeclarationForm({
   dossierId,
   organizationId,
   fieldRequirements,
-  documentRequirements,
   values: initialValues,
 }: DeclarationFormProps) {
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>(() => ({
@@ -345,31 +343,6 @@ export function DeclarationForm({
             );
           })}
         </div>
-
-        {/* Informative Documents Section (HU-013 placeholder) */}
-        {documentRequirements.length > 0 && (
-          <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
-            <div className="flex items-center gap-2 mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              <Info className="w-4 h-4 text-sky-500" />
-              <span>Documentos requeridos para este expediente (informativo)</span>
-            </div>
-            <div className="p-3 rounded-lg bg-sky-50/50 dark:bg-sky-950/20 border border-sky-200/60 dark:border-sky-800/40 text-xs text-sky-900 dark:text-sky-200 space-y-1">
-              <p>
-                Los siguientes documentos serán solicitados en el siguiente paso de debida diligencia:
-              </p>
-              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-sky-800/90 dark:text-sky-300">
-                {documentRequirements.map((d) => (
-                  <li key={d.key}>
-                    <strong>{d.key.replace(/_/g, ' ')}</strong> ({d.standard})
-                  </li>
-                ))}
-              </ul>
-              <p className="text-[10px] text-sky-700 dark:text-sky-400 pt-1">
-                La plataforma de carga de archivos estará habilitada próximamente.
-              </p>
-            </div>
-          </div>
-        )}
       </CardContent>
 
       <CardFooter className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-zinc-100 dark:border-zinc-800 pt-4 bg-zinc-50/50 dark:bg-zinc-900/20">

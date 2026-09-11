@@ -24,6 +24,7 @@ import {
   completeDeclaration,
   IncompleteDeclarationError,
 } from './declaration';
+import { confirmDocumentUpload } from '../documents/document';
 
 const directUrl = process.env.DIRECT_URL;
 const adminSql = postgres(directUrl || '');
@@ -63,6 +64,10 @@ async function cleanupTestData() {
   `;
   await adminSql`
     DELETE FROM public.assertions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.documents
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
   await adminSql`
@@ -405,7 +410,27 @@ describe('HU-012: Formulario dinámico de identificación', () => {
       },
     });
 
-    // Complete declaration
+    // Attempting to complete with mandatory doc_rut missing should fail with IncompleteDeclarationError
+    await expect(
+      completeDeclaration({
+        organizationId: orgId,
+        dossierId: dossierProveedorId,
+      }),
+    ).rejects.toThrow(IncompleteDeclarationError);
+
+    // Confirm doc_rut document upload
+    await confirmDocumentUpload({
+      organizationId: orgId,
+      dossierId: dossierProveedorId,
+      documentType: 'doc_rut',
+      storagePath: `${dossierProveedorId}/doc_rut/test-rut.pdf`,
+      hash: 'fakehash1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab',
+      format: 'pdf',
+      size: 1024,
+      uploadedByType: 'counterparty',
+    });
+
+    // Complete declaration now succeeds
     await completeDeclaration({
       organizationId: orgId,
       dossierId: dossierProveedorId,

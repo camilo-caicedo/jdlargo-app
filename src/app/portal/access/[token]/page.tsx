@@ -12,7 +12,9 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { OtpForm } from './otp-form';
 import { PrivacyNoticeForm } from './privacy-notice-form';
 import { DeclarationForm } from './declaration-form';
+import { DocumentUploadSection } from './document-upload-section';
 import { getDeclarationForm } from '@/server/dossiers/declaration';
+import { getLatestDocumentsForDossier } from '@/server/documents/document';
 import { CheckCircle, Clock } from 'lucide-react';
 
 export default async function PortalAccessPage({
@@ -210,15 +212,35 @@ export default async function PortalAccessPage({
     }
 
     const formData = await getDeclarationForm(result.organizationId, result.dossierId);
+    const latestDocs = await getLatestDocumentsForDossier(result.organizationId, result.dossierId);
+
+    const initialDocsDTO = latestDocs.map((d) => ({
+      id: d.id,
+      documentType: d.documentType,
+      version: d.version,
+      format: d.format,
+      state: d.state,
+      createdAt: d.createdAt.toISOString(),
+    }));
+
     return (
-      <DeclarationForm
-        token={token}
-        dossierId={result.dossierId}
-        organizationId={result.organizationId}
-        fieldRequirements={formData.fieldRequirements}
-        documentRequirements={formData.documentRequirements}
-        values={formData.values}
-      />
+      <div className="w-full space-y-6">
+        <DeclarationForm
+          token={token}
+          dossierId={result.dossierId}
+          organizationId={result.organizationId}
+          fieldRequirements={formData.fieldRequirements}
+          documentRequirements={formData.documentRequirements}
+          values={formData.values}
+        />
+        <DocumentUploadSection
+          token={token}
+          dossierId={result.dossierId}
+          organizationId={result.organizationId}
+          documentRequirements={formData.documentRequirements}
+          initialDocuments={initialDocsDTO}
+        />
+      </div>
     );
   }
 
