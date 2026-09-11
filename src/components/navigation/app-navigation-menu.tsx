@@ -11,7 +11,8 @@ import {
   LogOut, 
   ShieldCheck,
   Check,
-  FolderKanban
+  FolderKanban,
+  Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { signOutAction } from '@/server/auth/actions';
@@ -21,12 +22,14 @@ interface AppNavigationMenuProps {
   currentMembership: ActiveMembershipSummary;
   memberships: ActiveMembershipSummary[];
   canManageMembers: boolean;
+  canViewConfiguration?: boolean;
 }
 
 export function AppNavigationMenu({
   currentMembership,
   memberships,
   canManageMembers,
+  canViewConfiguration = false,
 }: AppNavigationMenuProps) {
   const pathname = usePathname();
   const [orgDropdownOpen, setOrgDropdownOpen] = React.useState(false);
@@ -47,6 +50,7 @@ export function AppNavigationMenu({
   const isDashboardActive = pathname === basePath;
   const isExpedientesActive = pathname.startsWith(`${basePath}/expedientes`);
   const isMiembrosActive = pathname.startsWith(`${basePath}/miembros`);
+  const isConfiguracionActive = pathname.startsWith(`${basePath}/configuracion`);
 
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur">
@@ -171,6 +175,20 @@ export function AppNavigationMenu({
                 Miembros
               </Link>
             )}
+
+            {canViewConfiguration && (
+              <Link
+                href={`${basePath}/configuracion`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  isConfiguracionActive
+                    ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                }`}
+              >
+                <Settings className="w-3.5 h-3.5" />
+                Configuración
+              </Link>
+            )}
           </nav>
 
           {/* Right section: System Badge & Logout */}
@@ -230,6 +248,19 @@ export function AppNavigationMenu({
             >
               <Users className="w-3 h-3" />
               Miembros
+            </Link>
+          )}
+          {canViewConfiguration && (
+            <Link
+              href={`${basePath}/configuracion`}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md shrink-0 ${
+                isConfiguracionActive
+                  ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100'
+                  : 'text-zinc-600 dark:text-zinc-400'
+              }`}
+            >
+              <Settings className="w-3 h-3" />
+              Configuración
             </Link>
           )}
         </div>

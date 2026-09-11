@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
-import { db, DrizzleClient } from '../db/client';
+import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
 import { privacyNotices, configurationVersions } from '../db/schema';
 
 export interface PrivacyNoticePurpose {
@@ -127,4 +127,21 @@ export async function getPrivacyNoticeForVersion(
     rightsChannels: row.rightsChannels,
     createdAt: row.createdAt,
   };
+}
+
+/**
+ * Asserts that a privacy notice is defined for the specified configuration version.
+ * Throws an error if no privacy notice exists.
+ */
+export async function assertPrivacyNoticeExists(
+  organizationId: string,
+  configurationVersionId: string,
+  txClient: DatabaseTransaction,
+): Promise<void> {
+  const notice = await getPrivacyNoticeForVersion(organizationId, configurationVersionId, txClient);
+  if (!notice) {
+    throw new Error(
+      'La versión de configuración no puede ser publicada sin un aviso de privacidad configurado',
+    );
+  }
 }

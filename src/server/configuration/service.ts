@@ -5,6 +5,7 @@ import type { PermissionKey } from '../auth/permissions';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
 import { assertRequirementMatrixIsComplete } from './requirement-matrix';
+import { assertPrivacyNoticeExists } from './privacy-notice';
 import { BASE_ROLES_TEMPLATE } from '../auth/role-config';
 
 export interface DraftRoleInput {
@@ -159,31 +160,32 @@ export async function createDraftConfiguration(
         );
       }
     }
+  }
 
-    // Also inherit privacy notice from active version if present
-    if (activeVersion) {
-      const [activeNotice] = await client
-        .select()
-        .from(privacyNotices)
-        .where(
-          and(
-            eq(privacyNotices.organizationId, input.organizationId),
-            eq(privacyNotices.configurationVersionId, activeVersion.id),
-          ),
-        )
-        .limit(1);
+  // Always inherit privacy notice from active version if present (HU-011, HU-062)
+  const activeVersionForNotice = await getActiveConfiguration(input.organizationId, client);
+  if (activeVersionForNotice) {
+    const [activeNotice] = await client
+      .select()
+      .from(privacyNotices)
+      .where(
+        and(
+          eq(privacyNotices.organizationId, input.organizationId),
+          eq(privacyNotices.configurationVersionId, activeVersionForNotice.id),
+        ),
+      )
+      .limit(1);
 
-      if (activeNotice) {
-        await client.insert(privacyNotices).values({
-          organizationId: input.organizationId,
-          configurationVersionId: draftVer.id,
-          text: activeNotice.text,
-          purposes: activeNotice.purposes,
-          dataController: activeNotice.dataController,
-          dataProcessor: activeNotice.dataProcessor,
-          rightsChannels: activeNotice.rightsChannels,
-        });
-      }
+    if (activeNotice) {
+      await client.insert(privacyNotices).values({
+        organizationId: input.organizationId,
+        configurationVersionId: draftVer.id,
+        text: activeNotice.text,
+        purposes: activeNotice.purposes,
+        dataController: activeNotice.dataController,
+        dataProcessor: activeNotice.dataProcessor,
+        rightsChannels: activeNotice.rightsChannels,
+      });
     }
   }
 
@@ -312,6 +314,9 @@ export async function publishDraftConfiguration(
     // Validate completeness of requirement matrix for any declared counterparty types (HU-007)
     await assertRequirementMatrixIsComplete(input.organizationId, input.versionId, tx);
 
+    // Validate that privacy notice exists (HU-062)
+    await assertPrivacyNoticeExists(input.organizationId, input.versionId, tx);
+
     const effectiveDate = input.effectiveFrom || new Date();
 
     // 2. Mark existing published version as 'replaced'
@@ -428,6 +433,31 @@ export async function getConfigurationAtDate(
 
   if (!match) return null;
   return getConfigurationVersionDetail(organizationId, match.id, client);
+}
+
+/**
+ * Retrieves the current draft configuration version if one exists.
+ * Returns null if there is no draft version.
+ */
+export async function getDraftConfiguration(
+  organizationId: string,
+  txClient?: DrizzleClient,
+): Promise<ConfigurationVersionDetail | null> {
+  const client = txClient || db;
+  const [draft] = await client
+    .select()
+    .from(configurationVersions)
+    .where(
+      and(
+        eq(configurationVersions.organizationId, organizationId),
+        eq(configurationVersions.status, 'draft'),
+      ),
+    )
+    .orderBy(desc(configurationVersions.createdAt))
+    .limit(1);
+
+  if (!draft) return null;
+  return getConfigurationVersionDetail(organizationId, draft.id, client);
 }
 
 /**

@@ -171,6 +171,16 @@ describe('HU-011: Privacy Notice Configuration Domain', () => {
       standard: 'SARLAFT',
     });
 
+    await addPrivacyNotice({
+      organizationId: orgId,
+      configurationVersionId: versionId,
+      text: 'Aviso para poder publicar',
+      purposes: [{ key: 'p1', description: 'desc', requiresAuthorization: true }],
+      dataController: 'Controller',
+      dataProcessor: 'Processor',
+      rightsChannels: 'rights@test.com',
+    });
+
     await publishDraftConfiguration({
       organizationId: orgId,
       versionId,
@@ -190,4 +200,27 @@ describe('HU-011: Privacy Notice Configuration Domain', () => {
       }),
     ).rejects.toThrow('Solo se pueden modificar avisos de privacidad en versiones en estado borrador');
   });
+
+  it('Escenario: Publicar una versión exige que el aviso de privacidad exista (HU-062)', async () => {
+    const { versionId } = await createDraftConfiguration({
+      organizationId: orgId,
+      standard: 'SARLAFT',
+    });
+
+    // Delete any inherited notice to ensure draft has no notice
+    await adminSql`
+      DELETE FROM public.privacy_notices
+      WHERE configuration_version_id = ${versionId}
+    `;
+
+    await expect(
+      publishDraftConfiguration({
+        organizationId: orgId,
+        versionId,
+        publishedBy: adminUserId,
+        reason: 'Intento de publicar sin aviso de privacidad',
+      }),
+    ).rejects.toThrow('La versión de configuración no puede ser publicada sin un aviso de privacidad configurado');
+  });
 });
+

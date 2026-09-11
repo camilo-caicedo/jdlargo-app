@@ -31,12 +31,17 @@ export default async function AppLayout({
     await checkUserPermission(userId, currentMembership.organizationId, 'memberships:manage')
   ).granted;
 
+  const canViewConfiguration = (
+    await checkUserPermission(userId, currentMembership.organizationId, 'configuration:view')
+  ).granted;
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col">
       <AppNavigationMenu
         currentMembership={currentMembership}
         memberships={memberships}
         canManageMembers={canManageMembers}
+        canViewConfiguration={canViewConfiguration}
       />
 
       <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">

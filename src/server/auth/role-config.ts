@@ -1,6 +1,6 @@
 import { eq, and, desc } from 'drizzle-orm';
 import { db, DatabaseTransaction, DrizzleClient, withTenantContext } from '../db/client';
-import { configurationVersions, roles, rolePermissions, counterpartyTypes, requirements } from '../db/schema';
+import { configurationVersions, roles, rolePermissions, counterpartyTypes, requirements, privacyNotices } from '../db/schema';
 import type { PermissionKey } from './permissions';
 import { logAuditEvent } from '../audit/service';
 import baseRolesData from './data/base-roles.json';
@@ -256,6 +256,28 @@ export async function seedBaseConfiguration(
         );
       }
     }
+
+    // Seed base privacy notice for version 1 (HU-011, HU-062)
+    await tx.insert(privacyNotices).values({
+      organizationId,
+      configurationVersionId: result.versionId,
+      text: 'Aviso de Privacidad y Tratamiento de Datos Personales para la prevención del riesgo de Lavado de Activos, Financiación del Terrorismo y Corrupción conforme al régimen aplicable.',
+      purposes: [
+        {
+          key: 'laft_screening',
+          description: 'Prevención y control del riesgo LA/FT/FPADM y consulta en listas vinculantes y restrictivas.',
+          requiresAuthorization: true,
+        },
+        {
+          key: 'legal_compliance',
+          description: 'Cumplimiento normativo ante entidades de supervisión, vigilancia y control.',
+          requiresAuthorization: false,
+        },
+      ],
+      dataController: 'Organización Cliente',
+      dataProcessor: 'Plataforma JD Largo',
+      rightsChannels: 'privacidad@organizacion.com',
+    });
   };
 
   if (txClient) {
