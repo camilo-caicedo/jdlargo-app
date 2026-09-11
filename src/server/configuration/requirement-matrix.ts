@@ -31,6 +31,7 @@ export interface AddRequirementInput {
   type: 'field' | 'document_type';
   key: string;
   mandatory: 'always' | 'conditional' | 'optional';
+  blocking?: boolean;
   condition?: Condition;
   validation?: z.infer<typeof validationSchema>;
 }
@@ -122,6 +123,7 @@ export async function addRequirement(
       type: input.type,
       key: input.key,
       mandatory: input.mandatory,
+      blocking: input.blocking !== undefined ? input.blocking : true,
       condition: input.condition || null,
       validation: input.validation || null,
     })
@@ -179,6 +181,7 @@ export async function getRequirementsForType(
     type: r.type as 'field' | 'document_type',
     key: r.key,
     mandatory: r.mandatory as 'always' | 'conditional' | 'optional',
+    blocking: r.blocking,
     condition: r.condition as Condition | null,
     validation: r.validation as z.infer<typeof validationSchema> | null,
   }));

@@ -6,6 +6,8 @@ import { getLatestDeclaredValuesForDossier } from '../assertions/service';
 import { getLatestDocumentsForDossier } from '../documents/document';
 import { executeTransition } from './state-machine';
 import { isRequirementCurrentlyRequired } from '@/lib/requirement-evaluation';
+import { enforceUserPermission } from '../auth/access-control';
+import { logAuditEvent } from '../audit/service';
 
 export class IncompleteReviewError extends Error {
   constructor(
@@ -68,6 +70,8 @@ export async function ensureReviewEntryTransition(
 export interface ReviewSummary {
   missingFields: string[];
   missingOrInvalidDocumentTypes: string[];
+  blockingMissingKeys: string[];
+  canOverride: boolean;
   isReadyForDecision: boolean;
 }
 
@@ -93,12 +97,17 @@ export async function getReviewSummary(
 
   // 1. Mandatory field requirements
   const missingFields: string[] = [];
+  const blockingMissingKeys: string[] = [];
+
   for (const req of fieldRequirements) {
     const isRequired = isRequirementCurrentlyRequired(req, values);
     if (isRequired) {
       const val = values[req.key];
       if (val === undefined || val === null || val === '') {
         missingFields.push(req.key);
+        if (req.blocking) {
+          blockingMissingKeys.push(req.key);
+        }
       }
     }
   }
@@ -114,23 +123,36 @@ export async function getReviewSummary(
     const isRequired = isRequirementCurrentlyRequired(req, values);
     if (isRequired && !validDocTypes.has(req.key)) {
       missingOrInvalidDocumentTypes.push(req.key);
+      if (req.blocking) {
+        blockingMissingKeys.push(req.key);
+      }
     }
   }
+
+  const isReadyForDecision = missingFields.length === 0 && missingOrInvalidDocumentTypes.length === 0;
+  const canOverride = !isReadyForDecision && blockingMissingKeys.length === 0;
 
   return {
     missingFields,
     missingOrInvalidDocumentTypes,
-    isReadyForDecision: missingFields.length === 0 && missingOrInvalidDocumentTypes.length === 0,
+    blockingMissingKeys,
+    canOverride,
+    isReadyForDecision,
   };
 }
 
 /**
  * Completes review and transitions dossier to 'pendiente_de_decision'.
- * Throws IncompleteReviewError if any mandatory field is missing or any mandatory document is not 'valid'.
- * (HU-014 Escenarios: Dar el expediente por listo para decisión / Un expediente incompleto no pasa a decisión)
+ * Supports override exception path if all missing requirements are non-blocking and actor has dossier:approve.
+ * (HU-014 / PA-029)
  */
 export async function completeReview(
-  input: { organizationId: string; dossierId: string; reviewedBy: string },
+  input: {
+    organizationId: string;
+    dossierId: string;
+    reviewedBy: string;
+    override?: { reason: string };
+  },
   txClient?: DrizzleClient,
 ): Promise<void> {
   const client = txClient || db;
@@ -139,6 +161,7 @@ export async function completeReview(
     .select({
       id: dossiers.id,
       state: dossiers.state,
+      configurationVersionId: dossiers.configurationVersionId,
     })
     .from(dossiers)
     .where(
@@ -161,14 +184,58 @@ export async function completeReview(
 
   const summary = await getReviewSummary(input.organizationId, input.dossierId, client);
 
-  if (!summary.isReadyForDecision) {
+  if (summary.isReadyForDecision) {
+    // Standard path: all requirements met
+    await executeTransition(
+      {
+        organizationId: input.organizationId,
+        dossierId: input.dossierId,
+        toState: 'pendiente_de_decision',
+        actorType: 'user',
+        actorId: input.reviewedBy,
+      },
+      txClient,
+    );
+    return;
+  }
+
+  // Not ready for decision
+  if (!input.override) {
     throw new IncompleteReviewError(
       summary.missingFields,
       summary.missingOrInvalidDocumentTypes,
     );
   }
 
-  // Transition to 'pendiente_de_decision' (permission dossier:edit, no reason required)
+  // Override attempted:
+  // a. Cannot override blocking requirements
+  if (summary.blockingMissingKeys.length > 0) {
+    throw new IncompleteReviewError(
+      summary.missingFields,
+      summary.missingOrInvalidDocumentTypes,
+    );
+  }
+
+  // b. Override reason must be non-empty
+  if (!input.override.reason || input.override.reason.trim() === '') {
+    throw new Error('La excepción exige un motivo explícito no vacío');
+  }
+
+  // c. Enforce permission 'dossier:approve' for override
+  await enforceUserPermission(
+    {
+      userId: input.reviewedBy,
+      organizationId: input.organizationId,
+    },
+    'dossier:approve',
+    {
+      dossierId: input.dossierId,
+      reason: input.override.reason.trim(),
+    },
+    txClient,
+  );
+
+  // d. Transition to 'pendiente_de_decision'
   await executeTransition(
     {
       organizationId: input.organizationId,
@@ -176,6 +243,32 @@ export async function completeReview(
       toState: 'pendiente_de_decision',
       actorType: 'user',
       actorId: input.reviewedBy,
+    },
+    txClient,
+  );
+
+  // e. Log audit event dossier.review_completed_with_exception
+  const skippedRequirementKeys = [
+    ...summary.missingFields,
+    ...summary.missingOrInvalidDocumentTypes,
+  ];
+
+  await logAuditEvent(
+    {
+      organizationId: input.organizationId,
+      actorType: 'user',
+      actorUserId: input.reviewedBy,
+      action: 'dossier.review_completed_with_exception',
+      entity: 'dossier',
+      entityId: input.dossierId,
+      configurationVersionId: dossier.configurationVersionId,
+      reason: input.override.reason.trim(),
+      metadata: {
+        overridden_by: input.reviewedBy,
+        reason: input.override.reason.trim(),
+        skipped_requirement_keys: skippedRequirementKeys,
+      },
+      origin: { actor: 'user', action: 'completeReview' },
     },
     txClient,
   );

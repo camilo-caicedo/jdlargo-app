@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, uniqueIndex, boolean, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, jsonb, uniqueIndex, boolean, integer, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // users — perfil, vive por encima de las organizaciones
@@ -145,6 +145,7 @@ export const requirements = pgTable('requirements', {
   type: text('type', { enum: ['field', 'document_type'] }).notNull(),
   key: text('key').notNull(),
   mandatory: text('mandatory', { enum: ['always', 'conditional', 'optional'] }).notNull(),
+  blocking: boolean('blocking').notNull().default(true),
   condition: jsonb('condition'),
   validation: jsonb('validation'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -342,4 +343,31 @@ export const documents = pgTable('documents', {
 }, (t) => [
   uniqueIndex('documents_dossier_type_hash_unique').on(t.dossierId, t.documentType, t.hash),
 ]).enableRLS();
+
+// decisions — registro formal de la decisión del Oficial de Cumplimiento (HU-015)
+export const decisions = pgTable('decisions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  type: text('type', { enum: ['approve', 'approve_with_conditions', 'reject'] }).notNull(),
+  responsibleId: uuid('responsible_id').notNull().references(() => users.id),
+  title: text('title').notNull(),
+  madeAt: timestamp('made_at', { withTimezone: true }).defaultNow().notNull(),
+  rationale: text('rationale').notNull(),
+  evidence: jsonb('evidence').$type<Array<{ kind: 'assertion' | 'document'; id: string }>>().notNull(),
+  validUntil: timestamp('valid_until', { withTimezone: true }).notNull(),
+  configurationVersionId: uuid('configuration_version_id').notNull().references(() => configurationVersions.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('decisions_dossier_idx').on(t.dossierId),
+]).enableRLS();
+
+// decision_conditions — condiciones estructuradas cuando la decisión es aprobada con condiciones (HU-015)
+export const decisionConditions = pgTable('decision_conditions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  decisionId: uuid('decision_id').notNull().references(() => decisions.id),
+  text: text('text').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}).enableRLS();
 

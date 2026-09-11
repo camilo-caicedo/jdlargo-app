@@ -42,6 +42,7 @@ export interface RequirementDetail {
   type: 'field' | 'document_type';
   key: string;
   mandatory: 'always' | 'conditional' | 'optional';
+  blocking: boolean;
   condition: Condition | null;
   validation: z.infer<typeof validationSchema> | null;
 }

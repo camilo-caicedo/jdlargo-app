@@ -50,6 +50,7 @@ describe('requirement-evaluation', () => {
       type: 'field',
       key: 'test_field',
       mandatory: 'always',
+      blocking: true,
       condition: null,
       validation: null,
     };

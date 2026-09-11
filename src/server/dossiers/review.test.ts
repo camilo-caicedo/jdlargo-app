@@ -407,4 +407,255 @@ describe('HU-014: Revisión del expediente y solicitud de correcciones', () => {
     `;
     expect(row.state).toBe('pendiente_de_decision');
   });
+
+  it('Escenario: Dar por revisado con excepción', async () => {
+    // Setup a new draft version with 1 non-blocking requirement (blocking: false) and 1 fulfilled
+    const draft = await createDraftConfiguration({
+      organizationId: orgId,
+      standard: 'SARLAFT',
+    });
+
+    const cpType = await addCounterpartyType({
+      organizationId: orgId,
+      configurationVersionId: draft.versionId,
+      name: 'proveedor_con_excepcion',
+      nature: 'legal_entity',
+    });
+
+    await addRequirement({
+      organizationId: orgId,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'tax_id',
+      mandatory: 'always',
+      blocking: true,
+      validation: { dataType: 'string' },
+    });
+
+    await addRequirement({
+      organizationId: orgId,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'optional_audit_field',
+      mandatory: 'always',
+      blocking: false,
+      validation: { dataType: 'string' },
+    });
+
+    await publishDraftConfiguration({
+      organizationId: orgId,
+      versionId: draft.versionId,
+      publishedBy: adminUserId,
+      reason: 'Versión con requisito no bloqueante',
+    });
+
+    // Create dossier
+    const excDossier = await createDossierRequest({
+      organizationId: orgId,
+      requestedBy: adminUserId,
+      counterpartyTypeName: 'proveedor_con_excepcion',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '900888777-1',
+        declaredName: 'Excepcion Test SAS',
+      },
+      internalOwnerId: adminUserId,
+    });
+
+    // Advance to en_revision
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: excDossier.id,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminUserId,
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: excDossier.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+    // Fulfill blocking requirement tax_id
+    await registerAssertion({
+      organizationId: orgId,
+      dossierId: excDossier.id,
+      partyId: excDossier.partyId,
+      configurationVersionId: excDossier.configurationVersionId,
+      field: 'tax_id',
+      value: '900888777-1',
+      origin: 'declared',
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: excDossier.id,
+      toState: 'documentos_recibidos',
+      actorType: 'counterparty',
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: excDossier.id,
+      toState: 'en_revision',
+      actorType: 'user',
+      actorId: analystUserId,
+    });
+
+    // Review summary shows canOverride = true and blockingMissingKeys empty
+    const summary = await getReviewSummary(orgId, excDossier.id);
+    expect(summary.isReadyForDecision).toBe(false);
+    expect(summary.missingFields).toContain('optional_audit_field');
+    expect(summary.blockingMissingKeys).toHaveLength(0);
+    expect(summary.canOverride).toBe(true);
+
+    // Standard completeReview without override fails
+    await expect(
+      completeReview({
+        organizationId: orgId,
+        dossierId: excDossier.id,
+        reviewedBy: officerUserId,
+      }),
+    ).rejects.toThrow(IncompleteReviewError);
+
+    // Override without reason fails
+    await expect(
+      completeReview({
+        organizationId: orgId,
+        dossierId: excDossier.id,
+        reviewedBy: officerUserId,
+        override: { reason: '' },
+      }),
+    ).rejects.toThrow(/exige un motivo explícito no vacío/);
+
+    // Analyst without dossier:approve cannot complete with override
+    await expect(
+      completeReview({
+        organizationId: orgId,
+        dossierId: excDossier.id,
+        reviewedBy: analystUserId,
+        override: { reason: 'Analista intentando autorizar excepcion' },
+      }),
+    ).rejects.toThrow(/falta el permiso 'dossier:approve'/i);
+
+    // Compliance Officer with dossier:approve completes review with exception
+    await completeReview({
+      organizationId: orgId,
+      dossierId: excDossier.id,
+      reviewedBy: officerUserId,
+      override: { reason: 'Se autoriza vinculación provisional a la espera del documento opcional' },
+    });
+
+    const [excRow] = await adminSql`
+      SELECT state FROM public.dossiers WHERE id = ${excDossier.id}::uuid
+    `;
+    expect(excRow.state).toBe('pendiente_de_decision');
+
+    // Audit log records dossier.review_completed_with_exception
+    const [auditLog] = await adminSql`
+      SELECT action, metadata, reason
+      FROM public.audit_log
+      WHERE organization_id = ${orgId}
+        AND entity_id = ${excDossier.id}
+        AND action = 'dossier.review_completed_with_exception'
+    `;
+    expect(auditLog).toBeDefined();
+    expect(auditLog.reason).toBe('Se autoriza vinculación provisional a la espera del documento opcional');
+    expect(auditLog.metadata.skipped_requirement_keys).toContain('optional_audit_field');
+  });
+
+  it('Escenario: Ningún requisito bloqueante admite excepción', async () => {
+    // Create dossier with unsatisfied blocking requirement
+    const draft = await createDraftConfiguration({
+      organizationId: orgId,
+      standard: 'SARLAFT',
+    });
+
+    const cpType = await addCounterpartyType({
+      organizationId: orgId,
+      configurationVersionId: draft.versionId,
+      name: 'proveedor_bloqueante',
+      nature: 'legal_entity',
+    });
+
+    await addRequirement({
+      organizationId: orgId,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'blocking_field',
+      mandatory: 'always',
+      blocking: true,
+      validation: { dataType: 'string' },
+    });
+
+    await publishDraftConfiguration({
+      organizationId: orgId,
+      versionId: draft.versionId,
+      publishedBy: adminUserId,
+      reason: 'Versión con requisito bloqueante estricto',
+    });
+
+    const blkDossier = await createDossierRequest({
+      organizationId: orgId,
+      requestedBy: adminUserId,
+      counterpartyTypeName: 'proveedor_bloqueante',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '900888777-2',
+        declaredName: 'Bloqueante Test SAS',
+      },
+      internalOwnerId: adminUserId,
+    });
+
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: blkDossier.id,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminUserId,
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: blkDossier.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: blkDossier.id,
+      toState: 'documentos_recibidos',
+      actorType: 'counterparty',
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: blkDossier.id,
+      toState: 'en_revision',
+      actorType: 'user',
+      actorId: analystUserId,
+    });
+
+    const summary = await getReviewSummary(orgId, blkDossier.id);
+    expect(summary.canOverride).toBe(false);
+    expect(summary.blockingMissingKeys).toContain('blocking_field');
+
+    // Attempting override on blocking requirement must fail with IncompleteReviewError
+    await expect(
+      completeReview({
+        organizationId: orgId,
+        dossierId: blkDossier.id,
+        reviewedBy: officerUserId,
+        override: { reason: 'Intento de ignorar un requisito bloqueante' },
+      }),
+    ).rejects.toThrow(IncompleteReviewError);
+
+    // Remains in en_revision
+    const [blkRow] = await adminSql`
+      SELECT state FROM public.dossiers WHERE id = ${blkDossier.id}::uuid
+    `;
+    expect(blkRow.state).toBe('en_revision');
+  });
 });

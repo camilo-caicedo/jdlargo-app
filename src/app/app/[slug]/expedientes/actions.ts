@@ -15,6 +15,8 @@ import {
   completeReview,
   requestCorrections,
 } from '@/server/dossiers/review';
+import { recordDecision, type EvidenceRef } from '@/server/dossiers/decision';
+import { executeTransition } from '@/server/dossiers/state-machine';
 
 const createDossierSchema = z.object({
   counterpartyTypeName: z.string().min(1, 'Seleccione un tipo de contraparte'),
@@ -328,6 +330,7 @@ export async function requestCorrectionsAction(
 export async function completeReviewAction(
   organizationId: string,
   dossierId: string,
+  overrideReason?: string,
 ): Promise<{ success: boolean; error?: string }> {
   const userId = await requireAuthenticatedUserId();
 
@@ -336,6 +339,7 @@ export async function completeReviewAction(
       organizationId,
       dossierId,
       reviewedBy: userId,
+      override: overrideReason && overrideReason.trim() !== '' ? { reason: overrideReason.trim() } : undefined,
     });
 
     revalidatePath('/app', 'layout');
@@ -345,6 +349,94 @@ export async function completeReviewAction(
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Error al dar por revisado el expediente',
+    };
+  }
+}
+
+export async function recordDecisionAction(input: {
+  organizationId: string;
+  dossierId: string;
+  type: 'approve' | 'approve_with_conditions' | 'reject';
+  title: string;
+  rationale: string;
+  evidence: EvidenceRef[];
+  validUntil: string;
+  conditions?: string[];
+}): Promise<{ success: boolean; error?: string; id?: string }> {
+  const userId = await requireAuthenticatedUserId();
+
+  if (!input.title || input.title.trim() === '') {
+    return { success: false, error: 'El cargo del responsable es obligatorio' };
+  }
+
+  if (!input.rationale || input.rationale.trim() === '') {
+    return { success: false, error: 'El fundamento de la decisión es obligatorio' };
+  }
+
+  if (!input.evidence || input.evidence.length === 0) {
+    return { success: false, error: 'Debe seleccionar al menos una evidencia' };
+  }
+
+  const validUntilDate = new Date(input.validUntil);
+  if (isNaN(validUntilDate.getTime()) || validUntilDate.getTime() <= Date.now()) {
+    return { success: false, error: 'La fecha de vigencia debe ser una fecha futura válida' };
+  }
+
+  if (input.type === 'approve_with_conditions') {
+    const cleanConds = (input.conditions || []).filter((c) => c && c.trim() !== '');
+    if (cleanConds.length === 0) {
+      return { success: false, error: 'Debe especificar al menos una condición para aprobar con condiciones' };
+    }
+  }
+
+  try {
+    const result = await recordDecision({
+      organizationId: input.organizationId,
+      dossierId: input.dossierId,
+      type: input.type,
+      responsibleId: userId,
+      title: input.title.trim(),
+      rationale: input.rationale.trim(),
+      evidence: input.evidence,
+      validUntil: validUntilDate,
+      conditions: input.type === 'approve_with_conditions'
+        ? (input.conditions || []).filter((c) => c && c.trim() !== '')
+        : undefined,
+    });
+
+    revalidatePath('/app', 'layout');
+    return { success: true, id: result.id };
+  } catch (err: unknown) {
+    console.error('[recordDecisionAction] Error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error al registrar la decisión',
+    };
+  }
+}
+
+export async function closeDossierAction(
+  organizationId: string,
+  dossierId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const userId = await requireAuthenticatedUserId();
+
+  try {
+    await executeTransition({
+      organizationId,
+      dossierId,
+      toState: 'cerrada',
+      actorType: 'user',
+      actorId: userId,
+    });
+
+    revalidatePath('/app', 'layout');
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('[closeDossierAction] Error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error al cerrar el expediente',
     };
   }
 }

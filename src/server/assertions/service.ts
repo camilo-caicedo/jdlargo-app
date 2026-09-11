@@ -58,6 +58,7 @@ export interface AssertionDetail {
 }
 
 export interface DeclaredFieldValue {
+  id: string;
   field: string;
   value: unknown;
   producedAt: Date;
@@ -294,6 +295,7 @@ export async function getLatestDeclaredValuesForDossier(
 
   const rows = await client
     .select({
+      id: assertions.id,
       field: assertions.field,
       value: assertions.value,
       producedAt: assertions.producedAt,
@@ -317,6 +319,7 @@ export async function getLatestDeclaredValuesForDossier(
     if (!seenFields.has(row.field)) {
       seenFields.add(row.field);
       results.push({
+        id: row.id,
         field: row.field,
         value: row.value,
         producedAt: row.producedAt,

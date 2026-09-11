@@ -20,6 +20,7 @@
     "description": "Responsable legal del proceso. Aprueba o rechaza expedientes, alertas y metodología",
     "permissions": [
       "dossier:create",
+      "dossier:edit",
       "dossier:view",
       "dossier:review",
       "dossier:approve",

@@ -8,7 +8,9 @@ import { getActiveAccessLinkForDossier } from '@/server/dossiers/access';
 import { getDossierHistory } from '@/server/dossiers/state-machine';
 import { getConsentForDossier } from '@/server/consent/consent';
 import { getLatestDocumentsForDossier } from '@/server/documents/document';
-import { ensureReviewEntryTransition } from '@/server/dossiers/review';
+import { ensureReviewEntryTransition, getReviewSummary } from '@/server/dossiers/review';
+import { getDecisionsForDossier } from '@/server/dossiers/decision';
+import { getEntityAuditHistory } from '@/server/audit/service';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ArrowLeft, History, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { AccessLinkBox } from './access-link-box';
@@ -16,6 +18,7 @@ import { ConsentCard } from './consent-card';
 import { EditDossierBox } from './edit-dossier-box';
 import { DocumentsCard } from './documents-card';
 import { ReviewActionsBox } from './review-actions-box';
+import { DecisionBox } from './decision-box';
 
 function getHumanState(state: string) {
   switch (state) {
@@ -25,10 +28,9 @@ function getHumanState(state: string) {
     case 'documentos_recibidos': return { label: 'Documentos recibidos', color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' };
     case 'en_revision': return { label: 'En revisión', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' };
     case 'pendiente_de_decision': return { label: 'Pendiente de decisión', color: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' };
-    case 'aprobado': return { label: 'Aprobado', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' };
-    case 'rechazado': return { label: 'Rechazado', color: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300' };
-    case 'rechazada_por_contraparte': return { label: 'Rechazada por contraparte', color: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' };
-    case 'cancelado': return { label: 'Cancelado', color: 'bg-zinc-100 text-zinc-500' };
+    case 'aprobada': return { label: 'Aprobada', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' };
+    case 'aprobada_con_condiciones': return { label: 'Aprobada con condiciones', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' };
+    case 'rechazada': return { label: 'Rechazada', color: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' };
     case 'cerrada': return { label: 'Cerrada', color: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' };
     default: return { label: state, color: 'bg-zinc-100 text-zinc-800' };
   }
@@ -80,8 +82,23 @@ export default async function DossierDetailPage({
     await checkUserPermission(userId, organizationId, 'dossier:review')
   ).granted;
 
-  // Load requirements & active link & history & consent & members & documents & declared values in parallel
-  const [requirements, activeLink, history, consent, rawMembers, rawDocs, rawValues] = await Promise.all([
+  const canApproveDossier = (
+    await checkUserPermission(userId, organizationId, 'dossier:approve')
+  ).granted;
+
+  // Load requirements & active link & history & consent & members & documents & declared values & decisions in parallel
+  const [
+    requirements,
+    activeLink,
+    history,
+    consent,
+    rawMembers,
+    rawDocs,
+    rawValues,
+    decisionsHistory,
+    reviewSummary,
+    auditHistory,
+  ] = await Promise.all([
     getDossierPendingRequirements(organizationId, id),
     getActiveAccessLinkForDossier(organizationId, id),
     getDossierHistory(organizationId, id),
@@ -91,10 +108,52 @@ export default async function DossierDetailPage({
     import('@/server/assertions/service').then((m) =>
       m.getLatestDeclaredValuesForDossier(organizationId, id),
     ),
+    getDecisionsForDossier(organizationId, id),
+    getReviewSummary(organizationId, id),
+    getEntityAuditHistory(organizationId, 'dossier', id),
   ]);
 
   const declaredValuesMap = new Map(rawValues.map((v) => [v.field, v]));
   const documentsMap = new Map(rawDocs.map((d) => [d.documentType, d]));
+
+  // Find last review_completed_with_exception event
+  const lastExceptionEvent = [...auditHistory]
+    .reverse()
+    .find((a) => a.action === 'dossier.review_completed_with_exception');
+
+  const exceptionWarning = lastExceptionEvent
+    ? {
+        reason: (lastExceptionEvent.metadata?.reason as string) || (lastExceptionEvent.reason as string) || '',
+        skippedRequirementKeys:
+          (lastExceptionEvent.metadata?.skipped_requirement_keys as string[]) || [],
+      }
+    : null;
+
+  // Build evidence options from declared values and uploaded documents
+  const availableEvidence: {
+    kind: 'assertion' | 'document';
+    id: string;
+    label: string;
+    sublabel?: string;
+  }[] = [];
+
+  for (const v of rawValues) {
+    availableEvidence.push({
+      kind: 'assertion',
+      id: v.id,
+      label: `Campo: ${v.field}`,
+      sublabel: String(v.value),
+    });
+  }
+
+  for (const doc of rawDocs) {
+    availableEvidence.push({
+      kind: 'document',
+      id: doc.id,
+      label: `Documento: ${doc.documentType} (v${doc.version})`,
+      sublabel: `Estado: ${doc.state}`,
+    });
+  }
 
   const docsDTO = rawDocs.map((d) => ({
     id: d.id,
@@ -147,6 +206,18 @@ export default async function DossierDetailPage({
             organizationId={organizationId}
             dossierId={dossier.id}
             canReview={canReviewDossier && dossier.state === 'en_revision'}
+            canOverrideReview={canApproveDossier}
+            canOverride={reviewSummary.canOverride}
+          />
+          <DecisionBox
+            organizationId={organizationId}
+            dossierId={dossier.id}
+            dossierState={dossier.state}
+            canDecide={canApproveDossier}
+            canClose={canEditDossier}
+            availableEvidence={availableEvidence}
+            decisionsHistory={decisionsHistory}
+            exceptionWarning={exceptionWarning}
           />
           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${stateBadge.color}`}>
             {stateBadge.label}

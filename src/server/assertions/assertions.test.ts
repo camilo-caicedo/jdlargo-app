@@ -539,6 +539,7 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
       const targetField = latestValues.find((v) => v.field === fieldName);
 
       expect(targetField).toBeDefined();
+      expect(targetField?.id).toBe(second.id);
       expect(targetField?.value).toBe('Calle 100 # 15-30 Oficina 501');
 
       // Both assertions must still exist in table (append-only)
