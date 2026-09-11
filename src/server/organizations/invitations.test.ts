@@ -149,15 +149,18 @@ describe('HU-056: Invitar miembros a la organización', () => {
     expect(invitation.role).toBe('compliance_analyst');
     expect(invitation.state).toBe('pending');
     expect(invitation.organizationId).toBe(orgAId);
+    expect(invitation.rawToken).toBeDefined();
+    expect(invitation.rawToken).toMatch(/^[0-9a-f]{64}$/);
 
     // Email mock verified
     const sent = mockSentEmails.find((e) => e.to === 'nueva@test-hu056.com');
     expect(sent).toBeDefined();
     expect(sent?.type).toBe('invitation');
 
-    // Appears in pending invitations list
+    // Appears in pending invitations list, but rawToken is NOT exposed in the list
     const pendingList = await listPendingInvitations(adminUserId, orgAId);
     expect(pendingList.some((i) => i.id === invitation.id)).toBe(true);
+    expect(pendingList.every((i) => i.rawToken === undefined)).toBe(true);
   });
 
   it('Escenario: Invitar exige el permiso correspondiente', async () => {

@@ -23,6 +23,7 @@ export interface InvitationDetail {
   expiresAt: Date;
   invitedBy: string;
   createdAt: Date;
+  rawToken?: string;
 }
 
 /**
@@ -153,6 +154,7 @@ export async function inviteMember(input: InviteMemberInput): Promise<Invitation
         expiresAt: inserted.expiresAt,
         invitedBy: inserted.invitedBy,
         createdAt: inserted.createdAt,
+        rawToken,
       };
 
       // 7. Fetch org name and send email notification (best-effort)

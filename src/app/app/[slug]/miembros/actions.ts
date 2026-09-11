@@ -14,6 +14,7 @@ export interface MemberActionState {
   success?: boolean;
   error?: string;
   message?: string;
+  rawToken?: string;
 }
 
 export async function inviteMemberAction(
@@ -38,7 +39,7 @@ export async function inviteMemberAction(
   }
 
   try {
-    await inviteMember({
+    const detail = await inviteMember({
       callerUserId: userId,
       organizationId,
       email: parsed.data.email,
@@ -48,6 +49,7 @@ export async function inviteMemberAction(
     return {
       success: true,
       message: `Invitación enviada a ${parsed.data.email}`,
+      rawToken: detail.rawToken,
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Error al enviar la invitación';

@@ -11,6 +11,7 @@ import {
   assertions,
 } from '../db/schema';
 import { executeTransition } from './state-machine';
+import { getActiveConfigurationVersion } from '../auth/role-config';
 import { getEntityAuditHistory, logAuditEvent } from '../audit/service';
 import {
   sendDossierExpirationReminderEmail,
@@ -201,37 +202,45 @@ export async function detectAndProcessExpiredDossiers(): Promise<ExpirationRunSu
 
     if (reminderCount >= REMINDER_THRESHOLD_BEFORE_ESCALATION) {
       // d. Threshold reached -> Send escalation to all members with 'dossier:approve'
-      const decisionMakers = await adminDb
-        .select({
-          userId: users.id,
-          name: users.name,
-          email: users.email,
-        })
-        .from(memberships)
-        .innerJoin(users, eq(memberships.userId, users.id))
-        .innerJoin(
-          roles,
-          and(
-            eq(roles.organizationId, orgId),
-            eq(roles.configurationVersionId, item.configurationVersionId),
-            eq(roles.code, memberships.role),
-          ),
-        )
-        .innerJoin(
-          rolePermissions,
-          and(
-            eq(rolePermissions.organizationId, orgId),
-            eq(rolePermissions.configurationVersionId, item.configurationVersionId),
-            eq(rolePermissions.roleId, roles.id),
-            eq(rolePermissions.permissionKey, 'dossier:approve'),
-          ),
-        )
-        .where(
-          and(
-            eq(memberships.organizationId, orgId),
-            eq(memberships.status, 'active'),
-          ),
-        );
+      // Uses the organization's CURRENTLY ACTIVE configuration version to resolve who has
+      // dossier:approve today — same source of truth as checkUserPermission — never the
+      // dossier's own frozen configurationVersionId, which reflects the matrix at the time
+      // the dossier was opened, not who currently holds decision authority.
+      const activeVersion = await getActiveConfigurationVersion(orgId, adminDb);
+
+      const decisionMakers = activeVersion
+        ? await adminDb
+            .select({
+              userId: users.id,
+              name: users.name,
+              email: users.email,
+            })
+            .from(memberships)
+            .innerJoin(users, eq(memberships.userId, users.id))
+            .innerJoin(
+              roles,
+              and(
+                eq(roles.organizationId, orgId),
+                eq(roles.configurationVersionId, activeVersion.id),
+                eq(roles.code, memberships.role),
+              ),
+            )
+            .innerJoin(
+              rolePermissions,
+              and(
+                eq(rolePermissions.organizationId, orgId),
+                eq(rolePermissions.configurationVersionId, activeVersion.id),
+                eq(rolePermissions.roleId, roles.id),
+                eq(rolePermissions.permissionKey, 'dossier:approve'),
+              ),
+            )
+            .where(
+              and(
+                eq(memberships.organizationId, orgId),
+                eq(memberships.status, 'active'),
+              ),
+            )
+        : [];
 
       // Send escalation email to each decision maker
       for (const dm of decisionMakers) {
