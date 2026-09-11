@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/dossier-access-expiry",
+      "schedule": "0 13 * * *"
+    }
+  ]
+}

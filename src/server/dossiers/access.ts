@@ -91,6 +91,17 @@ export async function issueAccessLink(
         },
         tx,
       );
+    } else if (dossier.state === 'expirado_pendiente') {
+      await executeTransition(
+        {
+          organizationId: input.organizationId,
+          dossierId: input.dossierId,
+          toState: 'en_diligenciamiento',
+          actorType: 'user',
+          actorId: input.issuedBy,
+        },
+        tx,
+      );
     }
 
     // Find active token if any

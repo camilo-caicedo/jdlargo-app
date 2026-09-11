@@ -17,6 +17,9 @@ import {
   getAccessUsesForDossier,
   getActiveAccessLinkForDossier,
 } from './access';
+import { executeTransition } from './state-machine';
+import { registerAssertion } from '../assertions/service';
+import { confirmDocumentUpload } from '../documents/document';
 import { resolveAccessToken } from '../privileged/portal-access';
 import { mockSentEmails } from '../notifications/email';
 
@@ -52,6 +55,7 @@ const TEST_ORG_NAMES = [
   'Revocacion Enlace Org',
   'Reconstruccion Accesos Org',
   'Revoke Flow Org S.A.S.',
+  'Reactivate Org S.A.S.',
 ];
 
 async function cleanupTestData() {
@@ -89,6 +93,10 @@ async function cleanupTestData() {
   `;
   await adminSql`
     DELETE FROM public.dossier_access_tokens
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.documents
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
   await adminSql`
@@ -767,5 +775,167 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     });
     expect(resolveResult.outcome).toBe('denied');
     expect(resolveResult.denialReason).toBe('revoked');
+  }, 60000);
+
+  it('HU-063: Reemitir el enlace sobre un expediente en expirado_pendiente lo regresa a en_diligenciamiento y conserva datos', async () => {
+    const adminUser = await createTestAuthUser(`admin-reactivate-${Date.now()}@test-hu010-acc.com`, 'Admin Reactivate');
+    const analystUser = await createTestAuthUser(`analyst-reactivate-${Date.now()}@test-hu010-acc.com`, 'Analyst Reactivate');
+
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'Reactivate Org S.A.S.' });
+    await seedBaseConfiguration(org.id, adminUser);
+    await grantMembership(adminUser, {
+      organizationId: org.id,
+      userId: analystUser,
+      role: 'compliance_analyst',
+    });
+
+    const draft = await createDraftConfiguration({
+      organizationId: org.id,
+      standard: 'SARLAFT',
+      rolesConfig: [
+        {
+          code: 'compliance_analyst',
+          name: 'Analista de Cumplimiento',
+          permissions: ['dossier:view', 'dossier:edit', 'dossier:create'],
+        },
+        {
+          code: 'admin',
+          name: 'Administrador',
+          permissions: ['configuration:view', 'configuration:publish'],
+        },
+      ],
+    });
+
+    const cpType = await addCounterpartyType({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      name: 'proveedor',
+      nature: 'legal_entity',
+    });
+
+    await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'tax_id',
+      mandatory: 'always',
+      validation: { dataType: 'string' },
+    });
+
+    await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'document_type',
+      key: 'doc_rut',
+      mandatory: 'always',
+    });
+
+    await publishDraftConfiguration({
+      organizationId: org.id,
+      versionId: draft.versionId,
+      publishedBy: adminUser,
+      reason: 'Config for reactivation test',
+    });
+
+    const dossier = await createDossierRequest({
+      organizationId: org.id,
+      requestedBy: analystUser,
+      counterpartyTypeName: 'proveedor',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '901234567-8',
+        declaredName: 'Proveedor Reactivacion S.A.S.',
+      },
+      internalOwnerId: analystUser,
+    });
+
+    // 1. Emitir enlace inicial
+    const initialLink = await issueAccessLink({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      issuedBy: analystUser,
+      requiresSecondFactor: false,
+      recipientEmail: 'contacto@reactivacion.com',
+    });
+
+    // 2. Contraparte entra y pasa a en_diligenciamiento
+    await executeTransition({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+
+    // 3. Contraparte diligencia un campo y carga un documento parcial
+    const assertionRes = await registerAssertion({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      partyId: dossier.partyId,
+      configurationVersionId: dossier.configurationVersionId,
+      field: 'tax_id',
+      value: '901234567-8',
+      origin: 'declared',
+    });
+
+    const docRes = await confirmDocumentUpload({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      documentType: 'doc_rut',
+      storagePath: `${dossier.id}/doc_rut/rut.pdf`,
+      hash: 'b'.repeat(64),
+      format: 'pdf',
+      size: 2048,
+      uploadedByType: 'counterparty',
+    });
+
+    // 4. Simular que el enlace venció y el sistema pasa el expediente a expirado_pendiente
+    await executeTransition({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      toState: 'expirado_pendiente',
+      actorType: 'system',
+    });
+
+    const [expiredDossier] = await adminSql<{ state: string }[]>`
+      SELECT state FROM public.dossiers WHERE id = ${dossier.id}
+    `;
+    expect(expiredDossier.state).toBe('expirado_pendiente');
+
+    // 5. Usuario interno reemite el enlace de acceso
+    const newLink = await issueAccessLink({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      issuedBy: analystUser,
+      requiresSecondFactor: false,
+      recipientEmail: 'contacto@reactivacion.com',
+    });
+    expect(newLink.rawToken).toBeDefined();
+
+    // 6. El expediente debe regresar automáticamente a 'en_diligenciamiento'
+    const [reactivatedDossier] = await adminSql<{ state: string }[]>`
+      SELECT state FROM public.dossiers WHERE id = ${dossier.id}
+    `;
+    expect(reactivatedDossier.state).toBe('en_diligenciamiento');
+
+    // 7. Las afirmaciones y documentos previos siguen intactos
+    const [persistedAssertion] = await adminSql<{ value: unknown }[]>`
+      SELECT value FROM public.assertions WHERE id = ${assertionRes.id}
+    `;
+    expect(persistedAssertion.value).toBe('901234567-8');
+
+    const [persistedDoc] = await adminSql<{ id: string; state: string }[]>`
+      SELECT id, state FROM public.documents WHERE id = ${docRes.id}
+    `;
+    expect(persistedDoc.id).toBe(docRes.id);
+
+    // 8. El enlace anterior quedó 'replaced'
+    const [oldTokenRow] = await adminSql<{ state: string }[]>`
+      SELECT state FROM public.dossier_access_tokens WHERE id = ${initialLink.id}
+    `;
+    expect(oldTokenRow.state).toBe('replaced');
   }, 60000);
 });

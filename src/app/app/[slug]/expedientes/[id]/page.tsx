@@ -32,6 +32,7 @@ function getHumanState(state: string) {
     case 'aprobada_con_condiciones': return { label: 'Aprobada con condiciones', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' };
     case 'rechazada': return { label: 'Rechazada', color: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' };
     case 'cerrada': return { label: 'Cerrada', color: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' };
+    case 'expirado_pendiente': return { label: 'Expirado / Pendiente', color: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300' };
     default: return { label: state, color: 'bg-zinc-100 text-zinc-800' };
   }
 }

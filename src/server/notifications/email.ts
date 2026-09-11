@@ -3,6 +3,8 @@ import { AccessLinkEmail } from './emails/access-link';
 import { OtpCodeEmail } from './emails/otp-code';
 import { InvitationEmail } from './emails/invitation';
 import { DossierRejectedEmail } from './emails/dossier-rejected';
+import { DossierExpirationReminderEmail } from './emails/dossier-expiration-reminder';
+import { DossierExpirationEscalationEmail } from './emails/dossier-expiration-escalation';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -10,7 +12,7 @@ export const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
 // Allow spying/intercepting sent emails in unit tests
 export const mockSentEmails: Array<{
-  type: 'access_link' | 'otp' | 'invitation' | 'dossier_rejected';
+  type: 'access_link' | 'otp' | 'invitation' | 'dossier_rejected' | 'expiration_reminder' | 'expiration_escalation';
   to: string;
   payload: Record<string, unknown>;
 }> = [];
@@ -149,4 +151,87 @@ export async function sendDossierRejectedEmail(input: SendDossierRejectedEmailIn
     console.error('[sendDossierRejectedEmail] Error sending dossier rejected email via Resend:', error);
   }
 }
+
+export interface SendDossierExpirationReminderEmailInput {
+  to: string;
+  ownerName?: string;
+  dossierCode: string;
+  partyDeclaredName: string;
+  organizationName: string;
+  dossierUrl?: string;
+}
+
+export async function sendDossierExpirationReminderEmail(
+  input: SendDossierExpirationReminderEmailInput,
+): Promise<void> {
+  if (process.env.NODE_ENV === 'test' || !resend) {
+    mockSentEmails.push({
+      type: 'expiration_reminder',
+      to: input.to,
+      payload: input as unknown as Record<string, unknown>,
+    });
+    return;
+  }
+
+  try {
+    await resend.emails.send({
+      from: 'JD Largo <notificaciones@jdlargo.com>',
+      to: input.to,
+      subject: `Enlace de acceso vencido (${input.dossierCode})`,
+      react: DossierExpirationReminderEmail({
+        ownerName: input.ownerName,
+        dossierCode: input.dossierCode,
+        partyDeclaredName: input.partyDeclaredName,
+        organizationName: input.organizationName,
+        dossierUrl: input.dossierUrl,
+      }),
+    });
+  } catch (error) {
+    console.error('[sendDossierExpirationReminderEmail] Error sending email via Resend:', error);
+  }
+}
+
+export interface SendDossierExpirationEscalationEmailInput {
+  to: string;
+  recipientName?: string;
+  dossierCode: string;
+  partyDeclaredName: string;
+  organizationName: string;
+  internalOwnerName?: string;
+  dossierUrl?: string;
+  reminderCount?: number;
+}
+
+export async function sendDossierExpirationEscalationEmail(
+  input: SendDossierExpirationEscalationEmailInput,
+): Promise<void> {
+  if (process.env.NODE_ENV === 'test' || !resend) {
+    mockSentEmails.push({
+      type: 'expiration_escalation',
+      to: input.to,
+      payload: input as unknown as Record<string, unknown>,
+    });
+    return;
+  }
+
+  try {
+    await resend.emails.send({
+      from: 'JD Largo <notificaciones@jdlargo.com>',
+      to: input.to,
+      subject: `Aviso de escalación: Expediente sin reactivar (${input.dossierCode})`,
+      react: DossierExpirationEscalationEmail({
+        recipientName: input.recipientName,
+        dossierCode: input.dossierCode,
+        partyDeclaredName: input.partyDeclaredName,
+        organizationName: input.organizationName,
+        internalOwnerName: input.internalOwnerName,
+        dossierUrl: input.dossierUrl,
+        reminderCount: input.reminderCount,
+      }),
+    });
+  } catch (error) {
+    console.error('[sendDossierExpirationEscalationEmail] Error sending email via Resend:', error);
+  }
+}
+
 
