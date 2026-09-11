@@ -70,6 +70,18 @@ async function cleanupTestData() {
       WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
     `;
     await tx`
+      DELETE FROM public.requirements
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
+    `;
+    await tx`
+      DELETE FROM public.counterparty_types
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
+    `;
+    await tx`
+      DELETE FROM public.privacy_notices
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
+    `;
+    await tx`
       DELETE FROM public.configuration_versions
       WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${tx(TEST_ORG_NAMES)})
     `;

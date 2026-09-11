@@ -116,6 +116,10 @@ async function cleanupTestData() {
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
   await adminSql`
+    DELETE FROM public.privacy_notices
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
     DELETE FROM public.configuration_versions
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
