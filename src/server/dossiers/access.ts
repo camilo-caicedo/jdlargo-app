@@ -5,6 +5,7 @@ import { dossierAccessTokens, dossiers, organizations } from '../db/schema';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
 import { sendAccessLinkEmail } from '../notifications/email';
+import { executeTransition } from './state-machine';
 
 export interface IssueAccessLinkInput {
   organizationId: string;
@@ -75,6 +76,23 @@ export async function issueAccessLink(
 
   // 4. Atomic transaction to replace any currently active token and insert new token
   const executeInTx = async (tx: DatabaseTransaction): Promise<AccessLinkDetail> => {
+    // Emitir el primer enlace de acceso es lo que envía la solicitud a la contraparte
+    // (HU-010 asume 'enviada' ya cumplida antes de que el enlace se use). Si el expediente
+    // sigue en 'borrador', esta es la transición que lo saca de ahí; reemitir un enlace más
+    // adelante (dossier ya 'enviada' o posterior) no repite la transición.
+    if (dossier.state === 'borrador') {
+      await executeTransition(
+        {
+          organizationId: input.organizationId,
+          dossierId: input.dossierId,
+          toState: 'enviada',
+          actorType: 'user',
+          actorId: input.issuedBy,
+        },
+        tx,
+      );
+    }
+
     // Find active token if any
     const [existingActive] = await tx
       .select()
