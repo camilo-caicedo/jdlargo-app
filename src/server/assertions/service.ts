@@ -21,7 +21,7 @@ export interface RegisterAssertionInput {
   field: string;
   value: unknown;
   origin: AssertionOrigin;
-  producedBy: string;
+  producedBy?: string;
   evidenceId?: string;
   confidence?: string; // Number 0.00 - 1.00 as string
   aiModelMetadata?: AiModelMetadata;
@@ -45,7 +45,7 @@ export interface AssertionDetail {
   field: string;
   value: unknown;
   origin: AssertionOrigin;
-  producedBy: string;
+  producedBy: string | null;
   producedAt: Date;
   evidenceId: string | null;
   confidence: string | null;
@@ -55,6 +55,13 @@ export interface AssertionDetail {
   resolvedBy: string | null;
   resolvedAt: Date | null;
   createdAt: Date;
+}
+
+export interface DeclaredFieldValue {
+  field: string;
+  value: unknown;
+  producedAt: Date;
+  producedBy: string | null;
 }
 
 /**
@@ -96,8 +103,13 @@ export async function registerAssertion(
     }
   }
 
+  // 4. Validate producer: non-declared origins strictly require producedBy
+  if (input.origin !== 'declared' && !input.producedBy) {
+    throw new Error(`Una afirmación con origen '${input.origin}' exige un usuario productor`);
+  }
+
   const execute = async (tx: DatabaseTransaction) => {
-    // 4. Insert assertion
+    // 5. Insert assertion
     const [created] = await tx
       .insert(assertions)
       .values({
@@ -108,7 +120,7 @@ export async function registerAssertion(
         field: input.field,
         value: input.value,
         origin: input.origin,
-        producedBy: input.producedBy,
+        producedBy: input.producedBy || null,
         evidenceId: input.evidenceId || null,
         confidence: input.confidence || null,
         aiModelMetadata: input.aiModelMetadata || null,
@@ -116,11 +128,11 @@ export async function registerAssertion(
       })
       .returning();
 
-    // 5. Register in audit_log via transversal logAuditEvent
+    // 6. Register in audit_log via transversal logAuditEvent
     await logAuditEvent(
       {
         organizationId: input.organizationId,
-        actorType: 'user',
+        actorType: input.producedBy ? 'user' : 'counterparty',
         actorUserId: input.producedBy,
         action: 'assertion.registered',
         entity: 'assertion',
@@ -136,7 +148,7 @@ export async function registerAssertion(
           evidence_id: input.evidenceId,
           confidence: input.confidence,
         },
-        origin: { actor: 'user', service: 'registerAssertion' },
+        origin: { actor: input.producedBy ? 'user' : 'counterparty', service: 'registerAssertion' },
       },
       tx,
     );
@@ -268,3 +280,51 @@ export async function resolveDiscrepancy(
   }
   return db.transaction(execute);
 }
+
+/**
+ * Retrieves the latest active declared value for each field in a dossier.
+ * (ADR-0005 §2, HU-012)
+ */
+export async function getLatestDeclaredValuesForDossier(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+): Promise<DeclaredFieldValue[]> {
+  const client = txClient || db;
+
+  const rows = await client
+    .select({
+      field: assertions.field,
+      value: assertions.value,
+      producedAt: assertions.producedAt,
+      producedBy: assertions.producedBy,
+    })
+    .from(assertions)
+    .where(
+      and(
+        eq(assertions.organizationId, organizationId),
+        eq(assertions.dossierId, dossierId),
+        eq(assertions.origin, 'declared'),
+        eq(assertions.status, 'active'),
+      ),
+    )
+    .orderBy(desc(assertions.producedAt));
+
+  const seenFields = new Set<string>();
+  const results: DeclaredFieldValue[] = [];
+
+  for (const row of rows) {
+    if (!seenFields.has(row.field)) {
+      seenFields.add(row.field);
+      results.push({
+        field: row.field,
+        value: row.value,
+        producedAt: row.producedAt,
+        producedBy: row.producedBy,
+      });
+    }
+  }
+
+  return results;
+}
+

@@ -111,7 +111,7 @@ export const assertions = pgTable('assertions', {
   field: text('field').notNull(),
   value: jsonb('value').notNull(),
   origin: text('origin', { enum: ['declared', 'extracted', 'verified', 'evaluated'] }).notNull(),
-  producedBy: uuid('produced_by').notNull().references(() => users.id),
+  producedBy: uuid('produced_by').references(() => users.id),
   producedAt: timestamp('produced_at', { withTimezone: true }).defaultNow().notNull(),
   evidenceId: text('evidence_id'),
   confidence: text('confidence'),

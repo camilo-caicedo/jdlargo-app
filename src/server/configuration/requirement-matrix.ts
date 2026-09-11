@@ -3,41 +3,18 @@ import { eq, and } from 'drizzle-orm';
 import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
 import { counterpartyTypes, requirements, configurationVersions } from '../db/schema';
 
-// Conjunto cerrado de condición (ADR-0004 §4: campo | operador | valor | combinadores y/o)
-export const CONDITION_OPERATORS = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'not_in'] as const;
-
-export const leafConditionSchema = z.object({
-  field: z.string().min(1),
-  operator: z.enum(CONDITION_OPERATORS),
-  value: z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.array(z.union([z.string(), z.number()])),
-  ]),
-}).strict();
-
-export type Condition =
-  | z.infer<typeof leafConditionSchema>
-  | { all: Condition[] }
-  | { any: Condition[] };
-
-export const conditionSchema: z.ZodType<Condition> = z.lazy(() =>
-  z.union([
-    leafConditionSchema,
-    z.object({ all: z.array(conditionSchema).min(1) }).strict(),
-    z.object({ any: z.array(conditionSchema).min(1) }).strict(),
-  ]),
-);
-
-// Conjunto cerrado de validación (tabla "Datos y validaciones" de HU-007: tipo de dato, formato, rango)
-export const validationSchema = z.object({
-  dataType: z.enum(['string', 'number', 'date', 'boolean', 'enum']),
-  format: z.string().optional(),
-  min: z.number().optional(),
-  max: z.number().optional(),
-  enumValues: z.array(z.string()).optional(),
-}).strict();
+export {
+  CONDITION_OPERATORS,
+  leafConditionSchema,
+  conditionSchema,
+  validationSchema,
+  type Condition,
+  type RequirementDetail,
+  evaluateCondition,
+  isRequirementCurrentlyRequired,
+  validateFieldValue,
+} from '@/lib/requirement-evaluation';
+import { conditionSchema, validationSchema, type Condition, type RequirementDetail } from '@/lib/requirement-evaluation';
 
 export interface AddCounterpartyTypeInput {
   organizationId: string;
@@ -56,16 +33,6 @@ export interface AddRequirementInput {
   mandatory: 'always' | 'conditional' | 'optional';
   condition?: Condition;
   validation?: z.infer<typeof validationSchema>;
-}
-
-export interface RequirementDetail {
-  requirementId: string;
-  standard: string;
-  type: 'field' | 'document_type';
-  key: string;
-  mandatory: 'always' | 'conditional' | 'optional';
-  condition: Condition | null;
-  validation: z.infer<typeof validationSchema> | null;
 }
 
 export async function addCounterpartyType(

@@ -9,6 +9,7 @@ import {
   registerAssertion,
   getAssertionsForField,
   resolveDiscrepancy,
+  getLatestDeclaredValuesForDossier,
   type AssertionOrigin,
 } from './service';
 
@@ -447,4 +448,96 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
       )
     ).rejects.toThrow();
   });
+
+  describe('HU-012: Afirmaciones declaradas por la contraparte y valores vigentes', () => {
+    it('permite registrar afirmación con origin "declared" sin producedBy y con actorType "counterparty" en audit', async () => {
+      const fieldName = 'actividad_economica_ciiu';
+      const assertion = await registerAssertion({
+        organizationId: orgAlfa.id,
+        dossierId,
+        partyId,
+        configurationVersionId,
+        field: fieldName,
+        value: '4711',
+        origin: 'declared',
+      });
+
+      expect(assertion.id).toBeDefined();
+      expect(assertion.producedBy).toBeNull();
+      expect(assertion.origin).toBe('declared');
+
+      // Verify audit log has actorType counterparty and null actorUserId
+      const [auditRow] = await adminSql`
+        SELECT * FROM public.audit_log
+        WHERE organization_id = ${orgAlfa.id}::uuid
+          AND action = 'assertion.registered'
+          AND entity_id = ${assertion.id}
+      `;
+      expect(auditRow).toBeDefined();
+      expect(auditRow.actor_type).toBe('counterparty');
+      expect(auditRow.actor_user_id).toBeNull();
+    });
+
+    it('rechaza registrar afirmación sin producedBy cuando origin no es "declared"', async () => {
+      await expect(
+        registerAssertion({
+          organizationId: orgAlfa.id,
+          dossierId,
+          partyId,
+          configurationVersionId,
+          field: 'rut_tax_id',
+          value: '900123456-1',
+          origin: 'extracted',
+          evidenceId: 'doc-123',
+          confidence: '0.95',
+          // producedBy omitted
+        }),
+      ).rejects.toThrow("Una afirmación con origen 'extracted' exige un usuario productor");
+    });
+
+    it('getLatestDeclaredValuesForDossier devuelve solo la más reciente por campo y no borra la anterior', async () => {
+      const fieldName = 'direccion_fiscal';
+
+      // First assertion
+      const first = await registerAssertion({
+        organizationId: orgAlfa.id,
+        dossierId,
+        partyId,
+        configurationVersionId,
+        field: fieldName,
+        value: 'Calle 100 # 10-20',
+        origin: 'declared',
+      });
+
+      // Small delay to ensure timestamp difference
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Corrected assertion
+      const second = await registerAssertion({
+        organizationId: orgAlfa.id,
+        dossierId,
+        partyId,
+        configurationVersionId,
+        field: fieldName,
+        value: 'Calle 100 # 15-30 Oficina 501',
+        origin: 'declared',
+      });
+
+      const latestValues = await getLatestDeclaredValuesForDossier(orgAlfa.id, dossierId);
+      const targetField = latestValues.find((v) => v.field === fieldName);
+
+      expect(targetField).toBeDefined();
+      expect(targetField?.value).toBe('Calle 100 # 15-30 Oficina 501');
+
+      // Both assertions must still exist in table (append-only)
+      const allRows = await adminSql`
+        SELECT id, value FROM public.assertions
+        WHERE organization_id = ${orgAlfa.id}::uuid AND field = ${fieldName} AND dossier_id = ${dossierId}::uuid
+      `;
+      expect(allRows.length).toBe(2);
+      expect(allRows.some((r) => r.id === first.id)).toBe(true);
+      expect(allRows.some((r) => r.id === second.id)).toBe(true);
+    });
+  });
 });
+

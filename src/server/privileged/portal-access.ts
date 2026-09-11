@@ -16,6 +16,7 @@ export interface ResolveTokenResult {
   outcome: 'granted' | 'denied';
   denialReason?: 'not_found' | 'expired' | 'revoked' | 'replaced';
   dossierId?: string;
+  dossierState?: string;
   organizationId?: string;
   configurationVersionId?: string;
   accessTokenId?: string;
@@ -41,6 +42,7 @@ export async function resolveAccessToken(
       organizationId: dossierAccessTokens.organizationId,
       dossierId: dossierAccessTokens.dossierId,
       configurationVersionId: dossiers.configurationVersionId,
+      dossierState: dossiers.state,
       state: dossierAccessTokens.state,
       expiresAt: dossierAccessTokens.expiresAt,
       requiresSecondFactor: dossierAccessTokens.requiresSecondFactor,
@@ -110,6 +112,7 @@ export async function resolveAccessToken(
         outcome,
         denialReason,
         dossierId: tokenRecord.dossierId,
+        dossierState: tokenRecord.dossierState,
         organizationId: tokenRecord.organizationId,
         configurationVersionId: tokenRecord.configurationVersionId,
         accessTokenId: tokenRecord.id,

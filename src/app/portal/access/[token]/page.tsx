@@ -11,6 +11,9 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { OtpForm } from './otp-form';
 import { PrivacyNoticeForm } from './privacy-notice-form';
+import { DeclarationForm } from './declaration-form';
+import { getDeclarationForm } from '@/server/dossiers/declaration';
+import { CheckCircle, Clock } from 'lucide-react';
 
 export default async function PortalAccessPage({
   params,
@@ -194,22 +197,56 @@ export default async function PortalAccessPage({
     }
   }
 
+  if (result.dossierState === 'en_diligenciamiento') {
+    if (!result.organizationId || !result.dossierId) {
+      return (
+        <Alert variant="destructive">
+          <AlertTitle>Expediente no identificado</AlertTitle>
+          <AlertDescription>
+            No fue posible identificar la organización o expediente correspondiente a este enlace.
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
+    const formData = await getDeclarationForm(result.organizationId, result.dossierId);
+    return (
+      <DeclarationForm
+        token={token}
+        dossierId={result.dossierId}
+        organizationId={result.organizationId}
+        fieldRequirements={formData.fieldRequirements}
+        documentRequirements={formData.documentRequirements}
+        values={formData.values}
+      />
+    );
+  }
+
+  // Cualquier estado posterior (documentos_recibidos en adelante): tarjeta de solo lectura
   return (
     <Card className="w-full shadow-sm">
       <CardHeader className="text-center">
+        <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-2">
+          <CheckCircle className="w-5 h-5" />
+        </div>
         <CardTitle className="text-emerald-700 dark:text-emerald-400">
-          Acceso concedido
+          Información enviada
         </CardTitle>
         <CardDescription className="mt-2">
-          Ha ingresado correctamente al expediente de debida diligencia.
+          Su declaración de datos ha sido completada y recibida satisfactoriamente.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 text-center">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Su acceso y consentimiento han quedado registrados para fines de trazabilidad y auditoría.
+          El expediente se encuentra actualmente en estado{' '}
+          <strong className="text-zinc-900 dark:text-zinc-100 font-semibold uppercase text-xs">
+            {result.dossierState || 'en revisión'}
+          </strong>
+          . El equipo de cumplimiento está procesando la información.
         </p>
-        <div className="p-4 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-xs text-zinc-500">
-          El formulario para el diligenciamiento de información y carga de documentos estará habilitado próximamente.
+        <div className="p-4 rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 text-xs text-zinc-500 flex items-center justify-center gap-2">
+          <Clock className="w-4 h-4 text-zinc-400" />
+          <span>No se requieren acciones adicionales de su parte en este momento.</span>
         </div>
       </CardContent>
     </Card>

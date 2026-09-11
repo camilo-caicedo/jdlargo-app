@@ -1,0 +1,245 @@
+import { eq, and } from 'drizzle-orm';
+import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
+import { dossiers } from '../db/schema';
+import {
+  type RequirementDetail,
+  isRequirementCurrentlyRequired,
+  validateFieldValue,
+} from '@/lib/requirement-evaluation';
+import { getDossierPendingRequirements } from './dossier';
+import {
+  registerAssertion,
+  getLatestDeclaredValuesForDossier,
+} from '../assertions/service';
+import { executeTransition } from './state-machine';
+
+export class IncompleteDeclarationError extends Error {
+  constructor(public missingFields: string[]) {
+    super(`Faltan campos obligatorios por diligenciar: ${missingFields.join(', ')}`);
+    this.name = 'IncompleteDeclarationError';
+  }
+}
+
+export interface DeclarationFormData {
+  dossierState: string;
+  fieldRequirements: RequirementDetail[];
+  documentRequirements: RequirementDetail[];
+  values: Record<string, unknown>;
+}
+
+/**
+ * Retrieves the declaration form data for a dossier, including frozen requirements and current values.
+ */
+export async function getDeclarationForm(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+): Promise<DeclarationFormData> {
+  const client = txClient || db;
+
+  const [dossier] = await client
+    .select({
+      id: dossiers.id,
+      state: dossiers.state,
+    })
+    .from(dossiers)
+    .where(
+      and(
+        eq(dossiers.organizationId, organizationId),
+        eq(dossiers.id, dossierId),
+      ),
+    )
+    .limit(1);
+
+  if (!dossier) {
+    throw new Error('Expediente no encontrado');
+  }
+
+  const allRequirements = await getDossierPendingRequirements(organizationId, dossierId, client);
+  const fieldRequirements = allRequirements.filter((r) => r.type === 'field');
+  const documentRequirements = allRequirements.filter((r) => r.type === 'document_type');
+
+  const latestValues = await getLatestDeclaredValuesForDossier(organizationId, dossierId, client);
+  const values: Record<string, unknown> = {};
+  for (const item of latestValues) {
+    values[item.field] = item.value;
+  }
+
+  return {
+    dossierState: dossier.state,
+    fieldRequirements,
+    documentRequirements,
+    values,
+  };
+}
+
+/**
+ * Saves declared field values as new immutable assertions with origin 'declared'.
+ */
+export async function saveDeclaredFields(
+  input: { organizationId: string; dossierId: string; fields: Record<string, unknown> },
+  txClient?: DrizzleClient,
+): Promise<void> {
+  const execute = async (tx: DatabaseTransaction) => {
+    // 1. Cargar el expediente; si state !== 'en_diligenciamiento', rechazar
+    const [dossier] = await tx
+      .select()
+      .from(dossiers)
+      .where(
+        and(
+          eq(dossiers.organizationId, input.organizationId),
+          eq(dossiers.id, input.dossierId),
+        ),
+      )
+      .limit(1);
+
+    if (!dossier) {
+      throw new Error('Expediente no encontrado');
+    }
+
+    if (dossier.state !== 'en_diligenciamiento') {
+      throw new Error(
+        `No se pueden guardar datos en un expediente en estado '${dossier.state}'. Solo se permite en 'en_diligenciamiento'.`,
+      );
+    }
+
+    if (!dossier.partyId) {
+      throw new Error('El expediente no tiene sujeto contraparte asignado');
+    }
+
+    // 2. Cargar los requisitos type: 'field' de la matriz congelada del expediente
+    const allRequirements = await getDossierPendingRequirements(input.organizationId, input.dossierId, tx);
+    const fieldRequirements = allRequirements.filter((r) => r.type === 'field');
+    const allowedFieldKeysMap = new Map(fieldRequirements.map((r) => [r.key, r]));
+
+    // Cada clave de input.fields tiene que existir en ese conjunto — si no, rechazar esa clave
+    for (const key of Object.keys(input.fields)) {
+      if (!allowedFieldKeysMap.has(key)) {
+        throw new Error(`El campo '${key}' no pertenece a los requisitos exigidos para este expediente`);
+      }
+    }
+
+    // 3. Para cada clave válida: validateFieldValue contra la validation del requisito
+    const validationErrors: Record<string, string> = {};
+    for (const [key, value] of Object.entries(input.fields)) {
+      const req = allowedFieldKeysMap.get(key)!;
+      const error = validateFieldValue(value, req.validation);
+      if (error) {
+        validationErrors[key] = error;
+      }
+    }
+
+    if (Object.keys(validationErrors).length > 0) {
+      const errorMsg = Object.entries(validationErrors)
+        .map(([k, err]) => `${k}: ${err}`)
+        .join('; ');
+      throw new Error(`Errores de validación: ${errorMsg}`);
+    }
+
+    // 4. Comparar contra getLatestDeclaredValuesForDossier — si no cambió, no duplicar fila
+    const latestValues = await getLatestDeclaredValuesForDossier(input.organizationId, input.dossierId, tx);
+    const latestValuesMap = new Map(latestValues.map((v) => [v.field, v.value]));
+
+    // 5. Para lo que sí cambió: registerAssertion
+    for (const [key, value] of Object.entries(input.fields)) {
+      const existingVal = latestValuesMap.get(key);
+      const isUnchanged = JSON.stringify(existingVal) === JSON.stringify(value);
+
+      if (!isUnchanged) {
+        await registerAssertion(
+          {
+            organizationId: input.organizationId,
+            dossierId: input.dossierId,
+            partyId: dossier.partyId,
+            configurationVersionId: dossier.configurationVersionId,
+            field: key,
+            value,
+            origin: 'declared',
+            producedBy: undefined,
+          },
+          tx,
+        );
+      }
+    }
+  };
+
+  if (txClient && 'execute' in txClient) {
+    return execute(txClient as DatabaseTransaction);
+  }
+  return db.transaction(execute);
+}
+
+/**
+ * Validates that all currently required fields are declared, then transitions dossier to 'documentos_recibidos'.
+ */
+export async function completeDeclaration(
+  input: { organizationId: string; dossierId: string },
+  txClient?: DrizzleClient,
+): Promise<void> {
+  const execute = async (tx: DatabaseTransaction) => {
+    // 1. Cargar expediente; si state !== 'en_diligenciamiento', rechazar
+    const [dossier] = await tx
+      .select()
+      .from(dossiers)
+      .where(
+        and(
+          eq(dossiers.organizationId, input.organizationId),
+          eq(dossiers.id, input.dossierId),
+        ),
+      )
+      .limit(1);
+
+    if (!dossier) {
+      throw new Error('Expediente no encontrado');
+    }
+
+    if (dossier.state !== 'en_diligenciamiento') {
+      throw new Error(
+        `No se puede finalizar la declaración de un expediente en estado '${dossier.state}'`,
+      );
+    }
+
+    // 2. Cargar requisitos type: 'field' + getLatestDeclaredValuesForDossier
+    const allRequirements = await getDossierPendingRequirements(input.organizationId, input.dossierId, tx);
+    const fieldRequirements = allRequirements.filter((r) => r.type === 'field');
+
+    const latestValues = await getLatestDeclaredValuesForDossier(input.organizationId, input.dossierId, tx);
+    const values: Record<string, unknown> = {};
+    for (const item of latestValues) {
+      values[item.field] = item.value;
+    }
+
+    // 3. Para cada requisito, isRequirementCurrentlyRequired(req, values)
+    const missingFields: string[] = [];
+    for (const req of fieldRequirements) {
+      const isRequired = isRequirementCurrentlyRequired(req, values);
+      if (isRequired) {
+        const val = values[req.key];
+        if (val === undefined || val === null || val === '') {
+          missingFields.push(req.key);
+        }
+      }
+    }
+
+    // 4. Si missingFields.length > 0, lanzar IncompleteDeclarationError
+    if (missingFields.length > 0) {
+      throw new IncompleteDeclarationError(missingFields);
+    }
+
+    // 5. Transición a 'documentos_recibidos' con actorType 'counterparty'
+    await executeTransition(
+      {
+        organizationId: input.organizationId,
+        dossierId: input.dossierId,
+        toState: 'documentos_recibidos',
+        actorType: 'counterparty',
+      },
+      tx,
+    );
+  };
+
+  if (txClient && 'execute' in txClient) {
+    return execute(txClient as DatabaseTransaction);
+  }
+  return db.transaction(execute);
+}
