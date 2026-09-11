@@ -219,11 +219,12 @@ export default async function PortalAccessPage({
       ),
     ]);
 
-    // Find the latest transition to en_diligenciamiento from en_revision (corrections requested)
-    const latestCorrectionTransition = history.find(
+    // Find the latest transition to en_diligenciamiento from en_revision (corrections requested).
+    // getDossierHistory is ordered oldest-first, so take the last match, not the first.
+    const correctionTransitions = history.filter(
       (h) => h.fromState === 'en_revision' && h.toState === 'en_diligenciamiento',
     );
-    const correctionsReason = latestCorrectionTransition?.reason || null;
+    const correctionsReason = correctionTransitions.at(-1)?.reason || null;
 
     const initialDocsDTO = latestDocs.map((d) => ({
       id: d.id,
