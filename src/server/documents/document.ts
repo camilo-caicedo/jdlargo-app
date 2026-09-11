@@ -564,7 +564,7 @@ export async function getDocumentDownloadUrl(input: {
   dossierId: string;
   documentId: string;
   requestedBy: { userId: string };
-}): Promise<string> {
+}): Promise<{ url: string; integrityMatches: boolean }> {
   // 1. enforceUserPermission
   await enforceUserPermission(
     {
@@ -591,7 +591,10 @@ export async function getDocumentDownloadUrl(input: {
     throw new Error('Documento no encontrado en el expediente especificado');
   }
 
-  // 3. Create short-lived signed URL (60s)
+  // 3. Verify document integrity before generating signed URL (HU-016)
+  const integrity = await verifyDocumentIntegrity(input.organizationId, input.documentId);
+
+  // 4. Create short-lived signed URL (60s)
   const adminStorage = createSupabaseAdminClient();
   const { data, error } = await adminStorage.storage
     .from(DOSSIER_DOCUMENTS_BUCKET)
@@ -601,7 +604,7 @@ export async function getDocumentDownloadUrl(input: {
     throw new Error(`Error al generar URL de descarga: ${error?.message || 'Error desconocido'}`);
   }
 
-  // 4. logAuditEvent
+  // 5. logAuditEvent
   await logAuditEvent({
     organizationId: input.organizationId,
     action: 'document.downloaded',
@@ -613,10 +616,14 @@ export async function getDocumentDownloadUrl(input: {
       dossierId: input.dossierId,
       documentType: doc.documentType,
       version: doc.version,
+      integrity_matches: integrity.matches,
     },
   });
 
-  return data.signedUrl;
+  return {
+    url: data.signedUrl,
+    integrityMatches: integrity.matches,
+  };
 }
 
 /**

@@ -218,18 +218,18 @@ export async function downloadDocumentAction(
   organizationId: string,
   dossierId: string,
   documentId: string,
-): Promise<{ success: boolean; url?: string; error?: string }> {
+): Promise<{ success: boolean; url?: string; integrityMatches?: boolean; error?: string }> {
   const userId = await requireAuthenticatedUserId();
 
   try {
-    const url = await getDocumentDownloadUrl({
+    const result = await getDocumentDownloadUrl({
       organizationId,
       dossierId,
       documentId,
       requestedBy: { userId },
     });
 
-    return { success: true, url };
+    return { success: true, url: result.url, integrityMatches: result.integrityMatches };
   } catch (err: unknown) {
     console.error('[downloadDocumentAction] Error:', err);
     return {

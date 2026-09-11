@@ -2,17 +2,17 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { requireAuthenticatedUserId } from '@/server/auth/session';
 import { listActiveMembershipsForUser, listMembers } from '@/server/organizations/use-cases';
-import { checkUserPermission } from '@/server/auth/access-control';
+import { checkUserPermission, enforceUserPermission } from '@/server/auth/access-control';
 import { getDossierById, getDossierPendingRequirements } from '@/server/dossiers/dossier';
-import { getActiveAccessLinkForDossier } from '@/server/dossiers/access';
+import { getActiveAccessLinkForDossier, getAccessUsesForDossier } from '@/server/dossiers/access';
 import { getDossierHistory } from '@/server/dossiers/state-machine';
 import { getConsentForDossier } from '@/server/consent/consent';
 import { getLatestDocumentsForDossier } from '@/server/documents/document';
 import { ensureReviewEntryTransition, getReviewSummary } from '@/server/dossiers/review';
 import { getDecisionsForDossier } from '@/server/dossiers/decision';
-import { getEntityAuditHistory } from '@/server/audit/service';
+import { getEntityAuditHistory, logAuditEvent } from '@/server/audit/service';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { ArrowLeft, History, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { ArrowLeft, History, CheckCircle2, Clock, AlertCircle, KeyRound, ShieldAlert } from 'lucide-react';
 import { AccessLinkBox } from './access-link-box';
 import { ConsentCard } from './consent-card';
 import { EditDossierBox } from './edit-dossier-box';
@@ -57,6 +57,16 @@ export default async function DossierDetailPage({
 
   const organizationId = currentMembership.organizationId;
 
+  // Gate de lectura obligatorio para visualizar expedientes (HU-016)
+  try {
+    await enforceUserPermission(
+      { userId, organizationId },
+      'dossier:view',
+    );
+  } catch {
+    notFound();
+  }
+
   // Auto-transition from documentos_recibidos -> en_revision if applicable (HU-014)
   await ensureReviewEntryTransition(organizationId, id);
 
@@ -65,6 +75,18 @@ export default async function DossierDetailPage({
   if (!dossier) {
     notFound();
   }
+
+  // Log de auditoría por consulta del expediente (HU-016 §2.6)
+  await logAuditEvent({
+    organizationId,
+    actorType: 'user',
+    actorUserId: userId,
+    action: 'dossier.viewed',
+    entity: 'dossier',
+    entityId: id,
+    configurationVersionId: dossier.configurationVersionId,
+    origin: { actor: 'user', action: 'DossierDetailPage' },
+  });
 
   const canEditDossier = (
     await checkUserPermission(userId, organizationId, 'dossier:edit')
@@ -86,7 +108,7 @@ export default async function DossierDetailPage({
     await checkUserPermission(userId, organizationId, 'dossier:approve')
   ).granted;
 
-  // Load requirements & active link & history & consent & members & documents & declared values & decisions in parallel
+  // Load requirements & active link & history & consent & members & documents & declared values & decisions & access uses in parallel
   const [
     requirements,
     activeLink,
@@ -98,6 +120,7 @@ export default async function DossierDetailPage({
     decisionsHistory,
     reviewSummary,
     auditHistory,
+    accessUses,
   ] = await Promise.all([
     getDossierPendingRequirements(organizationId, id),
     getActiveAccessLinkForDossier(organizationId, id),
@@ -111,6 +134,7 @@ export default async function DossierDetailPage({
     getDecisionsForDossier(organizationId, id),
     getReviewSummary(organizationId, id),
     getEntityAuditHistory(organizationId, 'dossier', id),
+    getAccessUsesForDossier(organizationId, id),
   ]);
 
   const declaredValuesMap = new Map(rawValues.map((v) => [v.field, v]));
@@ -175,6 +199,8 @@ export default async function DossierDetailPage({
     email: m.user.email,
   }));
 
+  const membersMap = new Map(members.map((m) => [m.id, m.name]));
+
   const stateBadge = getHumanState(dossier.state);
 
   const coveredRequirementsCount = requirements.filter((req) => {
@@ -233,7 +259,7 @@ export default async function DossierDetailPage({
             <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 mt-0.5">
               {dossier.partyDeclaredName}
             </h1>
-            <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1 font-mono">
+            <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1 font-mono flex-wrap">
               <span>{dossier.partyIdentificationType}: {dossier.partyIdentificationNumber}</span>
               <span>•</span>
               <span className="uppercase text-emerald-600 dark:text-emerald-400 font-medium">
@@ -241,6 +267,14 @@ export default async function DossierDetailPage({
               </span>
               <span>•</span>
               <span>Estándar: {dossier.standard}</span>
+              {dossier.configurationVersionNumber && (
+                <>
+                  <span>•</span>
+                  <span className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                    Versión config: v{dossier.configurationVersionNumber}
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
@@ -295,6 +329,7 @@ export default async function DossierDetailPage({
                     </span>
                   );
                   let detailText: string | null = null;
+                  let provenanceText: string | null = null;
 
                   if (req.type === 'field') {
                     const declared = declaredValuesMap.get(req.key);
@@ -306,6 +341,10 @@ export default async function DossierDetailPage({
                         </span>
                       );
                       detailText = String(declared.value);
+
+                      const actorName = declared.producedBy ? (membersMap.get(declared.producedBy) || 'Usuario interno') : 'la contraparte';
+                      const formattedDate = new Date(declared.producedAt).toLocaleDateString();
+                      provenanceText = `Declarado por ${actorName} el ${formattedDate}`;
                     }
                   } else if (req.type === 'document_type') {
                     const doc = documentsMap.get(req.key);
@@ -351,7 +390,7 @@ export default async function DossierDetailPage({
                           )}
                           <span className="capitalize">{req.key.replace(/_/g, ' ')}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                        <div className="flex items-center gap-2 text-[11px] text-zinc-400 flex-wrap">
                           <span>
                             {req.mandatory === 'always' && 'Obligatorio'}
                             {req.mandatory === 'conditional' && 'Condicional según matriz'}
@@ -362,6 +401,14 @@ export default async function DossierDetailPage({
                               <span>•</span>
                               <span className="text-zinc-600 dark:text-zinc-300 font-mono font-medium">
                                 Valor: {detailText}
+                              </span>
+                            </>
+                          )}
+                          {provenanceText && (
+                            <>
+                              <span>•</span>
+                              <span className="text-zinc-500 italic">
+                                {provenanceText}
                               </span>
                             </>
                           )}
@@ -393,6 +440,65 @@ export default async function DossierDetailPage({
         <div className="space-y-6">
           {/* Consent evidence card (HU-011) */}
           <ConsentCard consent={consent} />
+
+          {/* Counterparty access attempts card (HU-016 §2.4) */}
+          <Card className="shadow-xs">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm flex items-center gap-1.5">
+                  <KeyRound className="w-4 h-4 text-zinc-500" />
+                  Accesos de la contraparte
+                </CardTitle>
+                <span className="text-xs text-zinc-400 font-mono">
+                  {accessUses.length} {accessUses.length === 1 ? 'intento' : 'intentos'}
+                </span>
+              </div>
+              <CardDescription className="text-xs">
+                Registro inmutable de uso del enlace de acceso.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {accessUses.length === 0 ? (
+                <div className="p-4 text-xs text-zinc-400 italic text-center">
+                  Sin intentos de acceso registrados
+                </div>
+              ) : (
+                <ul className="divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
+                  {accessUses.map((use) => (
+                    <li key={use.id} className="p-3 space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                          {use.result === 'granted' ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Acceso permitido
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
+                              <ShieldAlert className="w-3 h-3" />
+                              Acceso denegado
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-zinc-400">
+                          {new Date(use.occurredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-zinc-500 flex items-center justify-between">
+                        <span className="font-mono">{use.ipAddress}</span>
+                        <span>{new Date(use.occurredAt).toLocaleDateString()}</span>
+                      </div>
+                      {use.denialReason && (
+                        <p className="text-[11px] text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 p-1.5 rounded mt-1 border border-rose-100 dark:border-rose-900/40">
+                          Motivo de rechazo: {use.denialReason}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="shadow-xs">
             <CardHeader className="pb-3">

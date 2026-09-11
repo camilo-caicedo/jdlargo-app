@@ -11,7 +11,7 @@ import { seedBaseConfiguration } from '../auth/role-config';
 import { createDraftConfiguration, publishDraftConfiguration } from '../configuration/service';
 import { addCounterpartyType, addRequirement } from '../configuration/requirement-matrix';
 import { createDossierRequest } from './dossier';
-import { issueAccessLink, revokeAccessLink } from './access';
+import { issueAccessLink, revokeAccessLink, getAccessUsesForDossier } from './access';
 import { mockSentEmails } from '../notifications/email';
 
 const directUrl = process.env.DIRECT_URL;
@@ -44,6 +44,7 @@ const TEST_ORG_NAMES = [
   'Enlace Org 1',
   'Reemplazo Enlace Org',
   'Revocacion Enlace Org',
+  'Reconstruccion Accesos Org',
 ];
 
 async function cleanupTestData() {
@@ -519,5 +520,143 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
         AND entity_id = ${dossier.id}
     `;
     expect(revokeLogs).toHaveLength(1);
+  }, 60000);
+
+  it('HU-016: getAccessUsesForDossier devuelve los usos del enlace en orden cronológico aislados por organización', async () => {
+    const adminUser = await createTestAuthUser('admin-rec@test-hu010-acc.com', 'Admin Rec');
+    const opUser = await createTestAuthUser('op-rec@test-hu010-acc.com', 'Op Rec');
+    const analystUser = await createTestAuthUser('analyst-rec@test-hu010-acc.com', 'Analyst Rec');
+
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'Reconstruccion Accesos Org' });
+    await seedBaseConfiguration(org.id, adminUser);
+
+    await grantMembership(adminUser, {
+      organizationId: org.id,
+      userId: opUser,
+      role: 'operational_user',
+    });
+    await grantMembership(adminUser, {
+      organizationId: org.id,
+      userId: analystUser,
+      role: 'compliance_analyst',
+    });
+
+    const draft = await createDraftConfiguration({
+      organizationId: org.id,
+      standard: 'SARLAFT',
+      rolesConfig: [
+        {
+          code: 'operational_user',
+          name: 'Usuario operativo',
+          permissions: ['dossier:create', 'dossier:view', 'document:upload'],
+        },
+        {
+          code: 'compliance_analyst',
+          name: 'Analista de Cumplimiento',
+          permissions: [
+            'dossier:view',
+            'dossier:edit',
+            'dossier:review',
+            'dossier:export',
+            'document:view',
+            'document:review',
+            'alert:view',
+            'alert:resolve',
+            'audit:view',
+            'configuration:view',
+          ],
+        },
+        {
+          code: 'admin',
+          name: 'Administrador',
+          permissions: [
+            'configuration:view',
+            'configuration:publish',
+            'configuration:administer',
+            'memberships:manage',
+            'audit:view',
+            'dossier:view',
+          ],
+        },
+      ],
+    });
+
+    const cpType = await addCounterpartyType({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      name: 'proveedor',
+      nature: 'legal_entity',
+    });
+
+    await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'tax_id',
+      mandatory: 'always',
+      validation: { dataType: 'string' },
+    });
+
+    await publishDraftConfiguration({
+      organizationId: org.id,
+      versionId: draft.versionId,
+      publishedBy: adminUser,
+      reason: 'Setup HU-016 test',
+    });
+
+    const dossier = await createDossierRequest({
+      organizationId: org.id,
+      requestedBy: opUser,
+      counterpartyTypeName: 'proveedor',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '901234567-4',
+        declaredName: 'Proveedor Reconstruccion S.A.S.',
+      },
+      internalOwnerId: analystUser,
+    });
+
+    const link = await issueAccessLink({
+      organizationId: org.id,
+      dossierId: dossier.id,
+      issuedBy: analystUser,
+      requiresSecondFactor: false,
+      recipientEmail: 'contacto@reconstruccion.com',
+    });
+
+    // Insert access uses directly with known timestamps
+    const time1 = new Date('2026-03-01T10:00:00Z');
+    const time2 = new Date('2026-03-01T10:05:00Z');
+    const time3 = new Date('2026-03-01T10:10:00Z');
+
+    await adminSql`
+      INSERT INTO public.dossier_access_uses (organization_id, dossier_id, access_token_id, ip_address, user_agent, result, denial_reason, occurred_at)
+      VALUES 
+        (${org.id}, ${dossier.id}, ${link.id}, '192.168.1.10', 'Mozilla/5.0 (Windows)', 'denied', 'Código OTP incorrecto', ${time2}),
+        (${org.id}, ${dossier.id}, ${link.id}, '192.168.1.10', 'Mozilla/5.0 (Windows)', 'denied', 'Enlace expirado', ${time1}),
+        (${org.id}, ${dossier.id}, ${link.id}, '192.168.1.10', 'Mozilla/5.0 (Windows)', 'granted', NULL, ${time3})
+    `;
+
+    const uses = await getAccessUsesForDossier(org.id, dossier.id);
+    expect(uses).toHaveLength(3);
+
+    // Debe venir en orden cronológico ASC
+    expect(new Date(uses[0].occurredAt).getTime()).toBe(time1.getTime());
+    expect(uses[0].result).toBe('denied');
+    expect(uses[0].denialReason).toBe('Enlace expirado');
+
+    expect(new Date(uses[1].occurredAt).getTime()).toBe(time2.getTime());
+    expect(uses[1].result).toBe('denied');
+
+    expect(new Date(uses[2].occurredAt).getTime()).toBe(time3.getTime());
+    expect(uses[2].result).toBe('granted');
+    expect(uses[2].denialReason).toBeNull();
+
+    // Aislamiento: otra organización no obtiene los usos
+    const otherOrgId = '00000000-0000-0000-0000-000000000099';
+    const usesOther = await getAccessUsesForDossier(otherOrgId, dossier.id);
+    expect(usesOther).toHaveLength(0);
   }, 60000);
 });

@@ -22,8 +22,10 @@ import {
   createDossierRequest,
   getDossierPendingRequirements,
   updateDossierAdministrativeData,
+  getDossierById,
 } from './dossier';
 import { executeTransition } from './state-machine';
+import { enforceUserPermission } from '../auth/access-control';
 
 const directUrl = process.env.DIRECT_URL;
 const adminSql = postgres(directUrl || '');
@@ -60,6 +62,7 @@ const TEST_ORG_NAMES = [
   'Permission Org',
   'Party Reuse Org',
   'HU-061 Edit Org',
+  'HU-016 Read Gate Org',
 ];
 
 async function cleanupTestData() {
@@ -68,7 +71,7 @@ async function cleanupTestData() {
   await adminSql`
     DELETE FROM public.audit_log
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com')
+       OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com' OR email LIKE '%@test-hu016.com')
   `;
   await adminSql`
     DELETE FROM public.assertions
@@ -78,7 +81,7 @@ async function cleanupTestData() {
   await adminSql`
     DELETE FROM public.memberships
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com')
+       OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com' OR email LIKE '%@test-hu016.com')
   `;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`
@@ -124,8 +127,8 @@ async function cleanupTestData() {
     DELETE FROM public.organizations
     WHERE name IN ${adminSql(TEST_ORG_NAMES)}
   `;
-  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com'`;
-  await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com'`;
+  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com' OR email LIKE '%@test-hu016.com'`;
+  await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu008.com' OR email LIKE '%@test-hu061.com' OR email LIKE '%@test-hu016.com'`;
   await adminSql`RESET app.allow_config_cleanup`;
 }
 
@@ -859,6 +862,125 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
           deadline: newDeadline,
         }),
       ).rejects.toThrow(/Un expediente cerrado no se puede editar/);
+    }, 60000);
+  });
+
+  describe('HU-016: Permisos de lectura de expedientes (gate dossier:view) y trazabilidad', () => {
+    it('verifica que enforceUserPermission con dossier:view permite a roles autorizados (admin, auditor, compliance_*) y rechaza a rol sin permiso', async () => {
+      const ts = Date.now();
+      const adminUser = await createTestAuthUser(`admin-${ts}@test-hu016.com`, 'Admin Read');
+      const auditorUser = await createTestAuthUser(`auditor-${ts}@test-hu016.com`, 'Auditor Read');
+      const officerUser = await createTestAuthUser(`officer-${ts}@test-hu016.com`, 'Officer Read');
+      const analystUser = await createTestAuthUser(`analyst-${ts}@test-hu016.com`, 'Analyst Read');
+      const opUser = await createTestAuthUser(`op-${ts}@test-hu016.com`, 'Op Read');
+      const customNoPermUser = await createTestAuthUser(`noperm-${ts}@test-hu016.com`, 'NoPerm Read');
+
+      const org = await createOrganizationWithAdmin(adminUser, { name: 'HU-016 Read Gate Org' });
+      await seedBaseConfiguration(org.id, adminUser);
+
+      await grantMembership(adminUser, { organizationId: org.id, userId: auditorUser, role: 'auditor' });
+      await grantMembership(adminUser, { organizationId: org.id, userId: officerUser, role: 'compliance_officer' });
+      await grantMembership(adminUser, { organizationId: org.id, userId: analystUser, role: 'compliance_analyst' });
+      await grantMembership(adminUser, { organizationId: org.id, userId: opUser, role: 'operational_user' });
+
+      // Configuración con roles base más un rol personalizado sin dossier:view
+      const { BASE_ROLES_TEMPLATE } = await import('../auth/role-config');
+      const draft = await createDraftConfiguration({
+        organizationId: org.id,
+        rolesConfig: [
+          ...BASE_ROLES_TEMPLATE.map((r) => ({
+            code: r.code,
+            name: r.name,
+            description: r.description,
+            permissions: [...r.permissions],
+          })),
+          {
+            code: 'no_view_role',
+            name: 'Rol Sin Lectura',
+            permissions: ['document:view'],
+          },
+        ],
+      });
+
+      const cpType = await addCounterpartyType({
+        organizationId: org.id,
+        configurationVersionId: draft.versionId,
+        name: 'proveedor',
+        nature: 'legal_entity',
+      });
+
+      await addRequirement({
+        organizationId: org.id,
+        configurationVersionId: draft.versionId,
+        counterpartyTypeId: cpType.id,
+        standard: 'SARLAFT',
+        type: 'field',
+        key: 'tax_id',
+        mandatory: 'always',
+        validation: { dataType: 'string' },
+      });
+
+      await publishDraftConfiguration({
+        organizationId: org.id,
+        versionId: draft.versionId,
+        publishedBy: adminUser,
+        reason: 'Publicar rol sin dossier:view',
+      });
+
+      await grantMembership(adminUser, { organizationId: org.id, userId: customNoPermUser, role: 'no_view_role' });
+
+      // 1. Roles autorizados deben pasar el gate dossier:view
+      await expect(enforceUserPermission({ userId: adminUser, organizationId: org.id }, 'dossier:view')).resolves.not.toThrow();
+      await expect(enforceUserPermission({ userId: auditorUser, organizationId: org.id }, 'dossier:view')).resolves.not.toThrow();
+      await expect(enforceUserPermission({ userId: officerUser, organizationId: org.id }, 'dossier:view')).resolves.not.toThrow();
+      await expect(enforceUserPermission({ userId: analystUser, organizationId: org.id }, 'dossier:view')).resolves.not.toThrow();
+      await expect(enforceUserPermission({ userId: opUser, organizationId: org.id }, 'dossier:view')).resolves.not.toThrow();
+
+      // 2. Rol sin dossier:view debe ser rechazado
+      await expect(enforceUserPermission({ userId: customNoPermUser, organizationId: org.id }, 'dossier:view')).rejects.toThrow(/Acción no autorizada: falta el permiso 'dossier:view'/);
+
+      // 3. Crear expediente y verificar que getDossierById devuelve configurationVersionNumber
+      const dossier = await createDossierRequest({
+        organizationId: org.id,
+        requestedBy: opUser,
+        counterpartyTypeName: 'proveedor',
+        party: {
+          identificationType: 'NIT',
+          identificationNumber: '901234567-9',
+          declaredName: 'Proveedor Con Version S.A.S.',
+        },
+        internalOwnerId: analystUser,
+      });
+
+      const detail = await getDossierById(org.id, dossier.id);
+      expect(detail).toBeDefined();
+      expect(detail?.configurationVersionNumber).toBeDefined();
+
+      // 4. Auditoría de consulta: registrar dossier.viewed y verificar persistencia
+      const { logAuditEvent } = await import('../audit/service');
+      await logAuditEvent({
+        organizationId: org.id,
+        actorType: 'user',
+        actorUserId: auditorUser,
+        action: 'dossier.viewed',
+        entity: 'dossier',
+        entityId: dossier.id,
+        configurationVersionId: dossier.configurationVersionId,
+        origin: { actor: 'user', action: 'DossierDetailPage' },
+      });
+
+      const [viewLog] = await adminSql<{ action: string; actor_user_id: string; entity_id: string }[]>`
+        SELECT action, actor_user_id, entity_id
+        FROM public.audit_log
+        WHERE organization_id = ${org.id}
+          AND action = 'dossier.viewed'
+          AND entity_id = ${dossier.id}
+        ORDER BY occurred_at DESC
+        LIMIT 1
+      `;
+      expect(viewLog).toBeDefined();
+      expect(viewLog.actor_user_id).toBe(auditorUser);
+      expect(viewLog.entity_id).toBe(dossier.id);
     }, 60000);
   });
 });

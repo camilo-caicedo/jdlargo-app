@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'crypto';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
-import { dossierAccessTokens, dossiers, organizations } from '../db/schema';
+import { dossierAccessTokens, dossierAccessUses, dossiers, organizations } from '../db/schema';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
 import { sendAccessLinkEmail } from '../notifications/email';
@@ -343,3 +343,51 @@ export async function getActiveAccessLinkForDossier(
     isExpired,
   };
 }
+
+export interface AccessUseRecord {
+  id: string;
+  occurredAt: Date;
+  ipAddress: string;
+  userAgent: string;
+  result: 'granted' | 'denied';
+  denialReason: string | null;
+}
+
+/**
+ * Returns list of counterparty link access attempts in chronological order (HU-016).
+ */
+export async function getAccessUsesForDossier(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+): Promise<AccessUseRecord[]> {
+  const client = txClient || db;
+
+  const rows = await client
+    .select({
+      id: dossierAccessUses.id,
+      occurredAt: dossierAccessUses.occurredAt,
+      ipAddress: dossierAccessUses.ipAddress,
+      userAgent: dossierAccessUses.userAgent,
+      result: dossierAccessUses.result,
+      denialReason: dossierAccessUses.denialReason,
+    })
+    .from(dossierAccessUses)
+    .where(
+      and(
+        eq(dossierAccessUses.organizationId, organizationId),
+        eq(dossierAccessUses.dossierId, dossierId),
+      ),
+    )
+    .orderBy(asc(dossierAccessUses.occurredAt));
+
+  return rows.map((r) => ({
+    id: r.id,
+    occurredAt: r.occurredAt,
+    ipAddress: r.ipAddress,
+    userAgent: r.userAgent,
+    result: r.result as 'granted' | 'denied',
+    denialReason: r.denialReason,
+  }));
+}
+

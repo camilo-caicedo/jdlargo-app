@@ -1,8 +1,8 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { requireAuthenticatedUserId } from '@/server/auth/session';
 import { listActiveMembershipsForUser } from '@/server/organizations/use-cases';
-import { checkUserPermission } from '@/server/auth/access-control';
+import { checkUserPermission, enforceUserPermission } from '@/server/auth/access-control';
 import { listDossiersForOrganization } from '@/server/dossiers/dossier';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -70,6 +70,16 @@ export default async function ExpedientesListPage({
   }
 
   const organizationId = currentMembership.organizationId;
+
+  try {
+    await enforceUserPermission(
+      { userId, organizationId },
+      'dossier:view',
+    );
+  } catch {
+    notFound();
+  }
+
   const canCreateDossier = (
     await checkUserPermission(userId, organizationId, 'dossier:create')
   ).granted;

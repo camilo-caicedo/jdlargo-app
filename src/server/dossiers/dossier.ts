@@ -1,6 +1,6 @@
 import { eq, and, sql, desc } from 'drizzle-orm';
 import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
-import { dossiers, parties, memberships, counterpartyTypes, users, assertions } from '../db/schema';
+import { dossiers, parties, memberships, counterpartyTypes, users, assertions, configurationVersions } from '../db/schema';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
 import { getActiveConfiguration } from '../configuration/service';
@@ -440,6 +440,7 @@ export interface DossierListItem {
   partyDeclaredName: string;
   counterpartyTypeName: string;
   standard: string;
+  configurationVersionNumber?: string;
   internalOwnerId?: string | null;
   internalOwnerName: string | null;
   state: string;
@@ -543,12 +544,14 @@ export async function getDossierById(
       state: dossiers.state,
       deadline: dossiers.deadline,
       configurationVersionId: dossiers.configurationVersionId,
+      configurationVersionNumber: configurationVersions.versionNumber,
       createdAt: dossiers.createdAt,
     })
     .from(dossiers)
     .leftJoin(parties, eq(dossiers.partyId, parties.id))
     .leftJoin(counterpartyTypes, eq(dossiers.counterpartyTypeId, counterpartyTypes.id))
     .leftJoin(users, eq(dossiers.internalOwnerId, users.id))
+    .leftJoin(configurationVersions, eq(dossiers.configurationVersionId, configurationVersions.id))
     .where(
       and(
         eq(dossiers.organizationId, organizationId),
@@ -584,6 +587,7 @@ export async function getDossierById(
     partyDeclaredName: nameAssertion?.value ? String(nameAssertion.value) : 'Contraparte',
     counterpartyTypeName: row.counterpartyTypeName || 'Sin tipo',
     standard: row.standard || 'SARLAFT',
+    configurationVersionNumber: row.configurationVersionNumber || undefined,
     internalOwnerId: row.internalOwnerId,
     internalOwnerName: row.internalOwnerName,
     state: row.state,

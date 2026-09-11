@@ -49,6 +49,7 @@ export function DocumentsCard({
   documents,
 }: DocumentsCardProps) {
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null);
+  const [downloadIntegrityStatus, setDownloadIntegrityStatus] = React.useState<Record<string, boolean>>({});
   const [actionInProgressId, setActionInProgressId] = React.useState<string | null>(null);
   const [rejectingDocId, setRejectingDocId] = React.useState<string | null>(null);
   const [rejectReason, setRejectReason] = React.useState<string>('');
@@ -61,6 +62,9 @@ export function DocumentsCard({
     try {
       const res = await downloadDocumentAction(organizationId, dossierId, docId);
       if (res.success && res.url) {
+        if (res.integrityMatches !== undefined) {
+          setDownloadIntegrityStatus((prev) => ({ ...prev, [docId]: res.integrityMatches! }));
+        }
         window.open(res.url, '_blank', 'noopener,noreferrer');
       } else {
         alert(res.error || 'Error al obtener enlace de descarga');
@@ -204,6 +208,22 @@ export function DocumentsCard({
                           </>
                         )}
                       </div>
+
+                      {downloadIntegrityStatus[doc.id] !== undefined && (
+                        <div className="pt-0.5">
+                          {downloadIntegrityStatus[doc.id] ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Huella verificada ✓
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-rose-600 dark:text-rose-400 font-medium bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200/60 dark:border-rose-800/40">
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              ⚠ La huella no coincide con la registrada — documento marcado para revisión
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       {doc.state === 'rejected' && doc.rejectionReason && (
                         <p className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 p-2 rounded-md border border-rose-100 dark:border-rose-900/50">

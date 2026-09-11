@@ -477,18 +477,27 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
   describe('Autorización de descarga', () => {
     it('permite descarga a usuario interno con permiso document:view', async () => {
+      const adminStorage = createSupabaseAdminClient();
+      const validPdfContent = Buffer.from('%PDF-1.4 Second Version of RUT with different content');
+      const latestBefore = await getLatestDocumentsForDossier(orgId, dossierId);
+      const rutDocBefore = latestBefore.find((d) => d.documentType === 'doc_rut') || latestBefore[0];
+      await adminStorage.storage
+        .from(DOSSIER_DOCUMENTS_BUCKET)
+        .upload(rutDocBefore.storagePath, validPdfContent, { upsert: true });
+
       const latest = await getLatestDocumentsForDossier(orgId, dossierId);
       const rutDoc = latest[0];
 
-      const url = await getDocumentDownloadUrl({
+      const result = await getDocumentDownloadUrl({
         organizationId: orgId,
         dossierId,
         documentId: rutDoc.id,
         requestedBy: { userId: analystUserId },
       });
 
-      expect(url).toBeDefined();
-      expect(url).toContain('token=');
+      expect(result.url).toBeDefined();
+      expect(result.url).toContain('token=');
+      expect(result.integrityMatches).toBe(true);
     });
 
     it('rechaza descarga a usuario de otra organización o sin permiso', async () => {
@@ -519,6 +528,33 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
       expect(url).toBeDefined();
       expect(url).toContain('token=');
+    });
+
+    it('detecta manipulación y devuelve integrityMatches: false al descargar archivo alterado en storage', async () => {
+      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const rutDoc = latest.find((d) => d.documentType === 'doc_rut');
+      expect(rutDoc).toBeDefined();
+
+      const adminStorage = createSupabaseAdminClient();
+      const alteredContent = Buffer.from('%PDF-1.4 Malicious alteration of document content');
+      await adminStorage.storage
+        .from(DOSSIER_DOCUMENTS_BUCKET)
+        .upload(rutDoc!.storagePath, alteredContent, { upsert: true });
+
+      const result = await getDocumentDownloadUrl({
+        organizationId: orgId,
+        dossierId,
+        documentId: rutDoc!.id,
+        requestedBy: { userId: analystUserId },
+      });
+
+      expect(result.url).toBeDefined();
+      expect(result.integrityMatches).toBe(false);
+
+      const [updatedRow] = await adminSql`
+        SELECT state FROM public.documents WHERE id = ${rutDoc!.id}
+      `;
+      expect(updatedRow.state).toBe('requires_review');
     });
   });
 
