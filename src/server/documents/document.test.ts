@@ -4,7 +4,26 @@ try {
   dns.setServers(['8.8.8.8', '1.1.1.1']);
 } catch {}
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+
+vi.mock('@/lib/antivirus', () => {
+  return {
+    scanBuffer: vi.fn(async (buffer: Buffer) => {
+      const content = buffer.toString('utf8');
+      if (content.includes('EICAR-STANDARD-ANTIVIRUS-TEST-FILE')) {
+        return {
+          infected: true,
+          viruses: ['Eicar-Test-Signature'],
+        };
+      }
+      return {
+        infected: false,
+        viruses: [],
+      };
+    }),
+  };
+});
+
 import postgres from 'postgres';
 import { createHash } from 'crypto';
 import { createOrganizationWithAdmin, grantMembership } from '../organizations/use-cases';
@@ -449,6 +468,56 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
       const { data } = await adminStorage.storage.from(DOSSIER_DOCUMENTS_BUCKET).download(fakePath);
       expect(data).toBeNull();
+    });
+
+    it('Escenario: Un archivo infectado se rechaza sin llegar a guardarse', async () => {
+      const adminStorage = createSupabaseAdminClient();
+      // EICAR standard test signature with PDF prefix so magic bytes pass
+      const infectedContent = Buffer.from('%PDF-1.4 X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*');
+      const infectedPath = `${dossierId}/doc_camara/infected-test.pdf`;
+      createdStoragePaths.push(infectedPath);
+
+      // Simular subida a Storage (como lo hace el cliente en el portal tras requestDocumentUpload)
+      const uploadReq = await requestDocumentUpload({
+        organizationId: orgId,
+        dossierId,
+        documentType: 'doc_camara',
+        fileName: 'infected-test.pdf',
+        declaredSize: infectedContent.length,
+        declaredMimeType: 'application/pdf',
+      });
+      expect(uploadReq.storagePath).toBeDefined();
+
+      await adminStorage.storage
+        .from(DOSSIER_DOCUMENTS_BUCKET)
+        .upload(infectedPath, infectedContent, { contentType: 'application/pdf', upsert: true });
+
+      // readAndValidateUploadedFile debe detectar el malware y rechazar
+      await expect(readAndValidateUploadedFile(infectedPath, orgId)).rejects.toThrow(
+        /El archivo no pasó el escaneo antivirus y fue rechazado/,
+      );
+
+      // Objeto eliminado de Storage
+      const { data } = await adminStorage.storage.from(DOSSIER_DOCUMENTS_BUCKET).download(infectedPath);
+      expect(data).toBeNull();
+
+      // Ningún documento guardado en la base de datos
+      const [docRow] = await adminSql<{ id: string }[]>`
+        SELECT id FROM public.documents WHERE storage_path = ${infectedPath}
+      `;
+      expect(docRow).toBeUndefined();
+
+      // El evento queda registrado en la bitácora
+      const [auditEvent] = await adminSql<{ action: string; metadata: Record<string, unknown> }[]>`
+        SELECT action, metadata FROM public.audit_log
+        WHERE organization_id = ${orgId}
+          AND action = 'document.upload_rejected_malware'
+        ORDER BY occurred_at DESC
+        LIMIT 1
+      `;
+      expect(auditEvent).toBeDefined();
+      expect(auditEvent.action).toBe('document.upload_rejected_malware');
+      expect(auditEvent.metadata.storagePath).toBe(infectedPath);
     });
 
     it('Escenario: La huella digital detecta si el archivo almacenado cambió', async () => {

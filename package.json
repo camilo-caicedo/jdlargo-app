@@ -17,6 +17,7 @@
     "@supabase/supabase-js": "^2.115.0",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.4",
+    "clamscan": "2.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.2.6",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/clamscan": "2.4.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

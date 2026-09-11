@@ -70,7 +70,7 @@ export async function confirmDocumentUploadAction(
     }
 
     // 1. Validar el archivo descargándolo de storage (magic bytes + hash + tamaño real) fuera de la DB tx
-    const validated = await readAndValidateUploadedFile(storagePath);
+    const validated = await readAndValidateUploadedFile(storagePath, organizationId);
 
     // 2. Confirmar en base de datos con sistema privilegiado
     await executePrivilegedSystemOperation(

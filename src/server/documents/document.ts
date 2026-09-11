@@ -12,6 +12,7 @@ import {
 import { registerAssertion } from '../assertions/service';
 import { logAuditEvent } from '../audit/service';
 import { enforceUserPermission } from '../auth/access-control';
+import { scanBuffer } from '@/lib/antivirus';
 
 export interface RequestDocumentUploadInput {
   organizationId: string;
@@ -163,10 +164,13 @@ export function detectFormatFromMagicBytes(buffer: Buffer): 'pdf' | 'jpg' | 'png
 
 /**
  * Downloads the uploaded object from storage, calculates real SHA-256 and detects true format.
- * If invalid or over size, deletes the file from storage and throws error.
+ * If invalid, over size or infected by malware, deletes the file from storage and throws error.
  * Runs outside of DB transactions.
  */
-export async function readAndValidateUploadedFile(storagePath: string): Promise<ValidatedFile> {
+export async function readAndValidateUploadedFile(
+  storagePath: string,
+  organizationId?: string,
+): Promise<ValidatedFile> {
   const adminStorage = createSupabaseAdminClient();
   const { data, error } = await adminStorage.storage
     .from(DOSSIER_DOCUMENTS_BUCKET)
@@ -191,6 +195,21 @@ export async function readAndValidateUploadedFile(storagePath: string): Promise<
   if (size > MAX_UPLOAD_SIZE_BYTES) {
     await adminStorage.storage.from(DOSSIER_DOCUMENTS_BUCKET).remove([storagePath]);
     throw new Error(`El archivo excede el tamaño máximo permitido de ${MAX_UPLOAD_SIZE_BYTES / (1024 * 1024)} MB`);
+  }
+
+  const scan = await scanBuffer(buffer);
+  if (scan.infected) {
+    await adminStorage.storage.from(DOSSIER_DOCUMENTS_BUCKET).remove([storagePath]);
+    if (organizationId) {
+      await logAuditEvent({
+        organizationId,
+        action: 'document.upload_rejected_malware',
+        actorType: 'system',
+        entity: 'document',
+        metadata: { storagePath, viruses: scan.viruses },
+      });
+    }
+    throw new Error('El archivo no pasó el escaneo antivirus y fue rechazado.');
   }
 
   const hash = createHash('sha256').update(buffer).digest('hex');
