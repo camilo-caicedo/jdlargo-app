@@ -99,7 +99,7 @@ export default async function PortalAccessPage({
       });
 
       return (
-        <Card className="w-full shadow-sm">
+        <Card className="w-full max-w-md mx-auto shadow-sm">
           <CardHeader className="text-center">
             <CardTitle>Verificación de seguridad</CardTitle>
             <CardDescription className="mt-2">
@@ -246,7 +246,7 @@ export default async function PortalAccessPage({
 
   // Cualquier estado posterior (documentos_recibidos en adelante): tarjeta de solo lectura
   return (
-    <Card className="w-full shadow-sm">
+    <Card className="w-full max-w-xl mx-auto shadow-sm">
       <CardHeader className="text-center">
         <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-2">
           <CheckCircle className="w-5 h-5" />

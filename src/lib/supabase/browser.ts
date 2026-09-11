@@ -13,13 +13,17 @@ export function getSupabaseBrowserClient(): SupabaseClient {
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!url || !anonKey) {
-    throw new Error('Supabase public credentials missing (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)');
+  if (!url || !key) {
+    throw new Error(
+      'Supabase public credentials missing (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY)',
+    );
   }
 
-  browserClient = createClient(url, anonKey, {
+  browserClient = createClient(url, key, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

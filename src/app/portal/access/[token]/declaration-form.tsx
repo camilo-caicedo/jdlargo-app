@@ -208,7 +208,7 @@ export function DeclarationForm({
         )}
 
         {/* Dynamic Fields */}
-        <div className="space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {fieldRequirements.map((req) => {
             const isRequired = isRequirementCurrentlyRequired(req, formValues);
             if (!isRequired && req.mandatory === 'conditional') {
@@ -221,13 +221,16 @@ export function DeclarationForm({
             const err = fieldErrors[req.key];
             const labelText = req.key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 
+            const isFullWidth = req.validation?.dataType === 'string' && (req.key.includes('address') || req.key.includes('direccion') || req.key.includes('observacion') || req.key.includes('description'));
             return (
               <div
                 key={req.key}
                 ref={(el) => {
                   fieldRefs.current[req.key] = el;
                 }}
-                className="space-y-1.5 p-3 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/30 border border-zinc-100 dark:border-zinc-800/80 transition-colors"
+                className={`space-y-1.5 p-3 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/30 border border-zinc-100 dark:border-zinc-800/80 transition-colors ${
+                  isFullWidth ? 'md:col-span-2' : ''
+                }`}
               >
                 <div className="flex items-center justify-between">
                   <Label htmlFor={req.key} className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
