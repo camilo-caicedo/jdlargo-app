@@ -1,6 +1,6 @@
 import { eq, and, desc } from 'drizzle-orm';
 import { db, DatabaseTransaction, DrizzleClient, withTenantContext } from '../db/client';
-import { configurationVersions, roles, rolePermissions } from '../db/schema';
+import { configurationVersions, roles, rolePermissions, counterpartyTypes, requirements } from '../db/schema';
 import type { PermissionKey } from './permissions';
 import { logAuditEvent } from '../audit/service';
 import baseRolesData from './data/base-roles.json';
@@ -140,18 +140,85 @@ export async function publishConfigurationVersion(
 }
 
 /**
- * Initializes the base roles matrix for a new organization as published version 1.
+ * Default initial template of counterparty types and requirement matrix (HU-007, PA-017, PA-038).
+ */
+export const BASE_COUNTERPARTY_TYPES_TEMPLATE = [
+  {
+    name: 'proveedor',
+    nature: 'legal_entity' as const,
+    requirements: [
+      {
+        type: 'field' as const,
+        key: 'tax_id',
+        mandatory: 'always' as const,
+        validation: { dataType: 'string', min: 5, max: 20 },
+      },
+      {
+        type: 'document_type' as const,
+        key: 'doc_rut',
+        mandatory: 'always' as const,
+      },
+      {
+        type: 'document_type' as const,
+        key: 'doc_camara_comercio',
+        mandatory: 'optional' as const,
+      },
+    ],
+  },
+  {
+    name: 'cliente',
+    nature: 'legal_entity' as const,
+    requirements: [
+      {
+        type: 'field' as const,
+        key: 'tax_id',
+        mandatory: 'always' as const,
+        validation: { dataType: 'string', min: 5, max: 20 },
+      },
+      {
+        type: 'document_type' as const,
+        key: 'doc_rut',
+        mandatory: 'always' as const,
+      },
+      {
+        type: 'document_type' as const,
+        key: 'doc_camara_comercio',
+        mandatory: 'optional' as const,
+      },
+    ],
+  },
+  {
+    name: 'empleado',
+    nature: 'natural_person' as const,
+    requirements: [
+      {
+        type: 'field' as const,
+        key: 'national_id',
+        mandatory: 'always' as const,
+        validation: { dataType: 'string', min: 5, max: 20 },
+      },
+      {
+        type: 'document_type' as const,
+        key: 'doc_cedula',
+        mandatory: 'always' as const,
+      },
+    ],
+  },
+];
+
+/**
+ * Initializes the base roles matrix, counterparty types, and requirements for a new organization as published version 1.
  */
 export async function seedBaseConfiguration(
   organizationId: string,
   publishedBy: string,
   txClient?: DatabaseTransaction,
 ) {
-  return publishConfigurationVersion(
+  const result = await publishConfigurationVersion(
     {
       organizationId,
       publishedBy,
-      reason: 'Configuración inicial de roles y permisos base (§30)',
+      reason: 'Configuración inicial de roles, permisos base y matriz de requisitos (§30, HU-007)',
       rolesConfig: BASE_ROLES_TEMPLATE.map((r) => ({
         code: r.code,
         name: r.name,
@@ -161,6 +228,49 @@ export async function seedBaseConfiguration(
     },
     txClient,
   );
+
+  const executeMatrixSeed = async (tx: DatabaseTransaction) => {
+    for (const typeTpl of BASE_COUNTERPARTY_TYPES_TEMPLATE) {
+      const [insertedType] = await tx
+        .insert(counterpartyTypes)
+        .values({
+          organizationId,
+          configurationVersionId: result.versionId,
+          name: typeTpl.name,
+          nature: typeTpl.nature,
+        })
+        .returning();
+
+      if (typeTpl.requirements.length > 0) {
+        await tx.insert(requirements).values(
+          typeTpl.requirements.map((req) => ({
+            organizationId,
+            configurationVersionId: result.versionId,
+            counterpartyTypeId: insertedType.id,
+            standard: 'SARLAFT',
+            type: req.type,
+            key: req.key,
+            mandatory: req.mandatory,
+            validation: 'validation' in req ? req.validation : null,
+          })),
+        );
+      }
+    }
+  };
+
+  if (txClient) {
+    await executeMatrixSeed(txClient);
+  } else {
+    await withTenantContext(
+      {
+        userId: publishedBy,
+        organizationId,
+      },
+      executeMatrixSeed,
+    );
+  }
+
+  return result;
 }
 
 /**
