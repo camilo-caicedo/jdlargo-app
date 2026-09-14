@@ -32,7 +32,27 @@ const files = readdirSync(migrationsDir)
 
 const sql = postgres(process.env.DIRECT_URL, { max: 1 });
 
+// Tabla propia de seguimiento, independiente del journal de drizzle-kit (que está
+// desincronizado — ver comentario arriba). Solo existe en local, nunca se aplica a
+// producción porque este script nunca corre contra DIRECT_URL de Supabase remoto.
+// Vive en su propio esquema, no en `public`: isolation.test.ts (HU-002) escanea todas las
+// tablas de `public` y exige RLS + organization_id en cada una — esta tabla es tooling de
+// desarrollo, no dominio, y no le corresponde esa regla.
+await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS _local_tooling`);
+await sql.unsafe(`
+  CREATE TABLE IF NOT EXISTS _local_tooling.migrations_applied (
+    filename text PRIMARY KEY,
+    applied_at timestamptz NOT NULL DEFAULT now()
+  )
+`);
+const alreadyApplied = new Set(
+  (await sql.unsafe('SELECT filename FROM _local_tooling.migrations_applied')).map((r) => r.filename),
+);
+
+let appliedCount = 0;
 for (const file of files) {
+  if (alreadyApplied.has(file)) continue;
+
   const content = readFileSync(path.join(migrationsDir, file), 'utf8');
   const statements = content
     .split('--> statement-breakpoint')
@@ -42,8 +62,14 @@ for (const file of files) {
   for (const statement of statements) {
     await sql.unsafe(statement);
   }
+  await sql.unsafe('INSERT INTO _local_tooling.migrations_applied (filename) VALUES ($1)', [file]);
   console.log(`✓ ${file}`);
+  appliedCount++;
 }
 
 await sql.end();
-console.log(`\n${files.length} migraciones aplicadas contra ${process.env.DIRECT_URL}`);
+console.log(
+  appliedCount === 0
+    ? '\nYa estaba al día, nada nuevo que aplicar.'
+    : `\n${appliedCount} migración(es) nueva(s) aplicada(s) contra ${process.env.DIRECT_URL}`,
+);
