@@ -13,3 +13,16 @@
 6. **Diseño visual:** toda pantalla sigue [`DESIGN.md`](./DESIGN.md) — tono, tipografía,
    color, componentes a emular y la lista de qué evitar para no verse "generado con AI".
    No reemplaza ninguna decisión de `ADR-0001` (librerías, RLS, límites de Server Action).
+7. **Panel de administración único:** toda capacidad de configuración/administración
+   (roles y permisos, versiones de configuración, matriz de requisitos, bitácora,
+   ejecuciones de IA, y lo que se agregue después) se expone bajo
+   `src/app/app/[slug]/admin/`, nunca en una ruta suelta aparte. Toda HU que agregue un
+   permiso administrativo nuevo al catálogo de `src/server/auth/permissions.ts` debe
+   incluir, en su plan, el paso de agregar o activar la pestaña correspondiente en ese
+   panel — ver `Planes/panel-de-administracion-consolidado.md`.
+8. **Pruebas y desarrollo contra Postgres local, no contra Supabase remoto.** Ver
+   [`docs/entorno-local.md`](./docs/entorno-local.md) — `npm run supabase:start` +
+   `npm run db:migrate:local` una vez, y `.env.test` ya deja `npm run test`/`npm run dev`
+   corriendo contra el stack local. Iterar con SQL manual contra Supabase remoto para
+   construir una historia es el motivo por el que `HU-018` se demoró más de lo necesario;
+   no repetirlo.
