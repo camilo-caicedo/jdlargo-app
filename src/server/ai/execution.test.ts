@@ -354,15 +354,17 @@ describe('HU-018: Registro de cada ejecución de IA', () => {
       async (tx) => recordAiExecution(input, tx),
     );
 
-    // Try deleting via authenticated tenant context -> rejected by trigger or RLS
-    await expect(
-      withTenantContext(
-        { userId: adminAlfaId, organizationId: orgAlfa.id },
-        async (tx) => {
-          await tx.execute(sql`DELETE FROM public.ai_executions WHERE id = ${execution.id}`);
-        },
-      ),
-    ).rejects.toThrow();
+    // Try deleting via authenticated tenant context -> no ai_executions_delete_policy exists,
+    // so RLS hides the row from DELETE entirely (0 rows affected, no exception — same as the
+    // established pattern in assertions.test.ts, which only asserts DELETE via adminSql).
+    await withTenantContext(
+      { userId: adminAlfaId, organizationId: orgAlfa.id },
+      async (tx) => {
+        await tx.execute(sql`DELETE FROM public.ai_executions WHERE id = ${execution.id}`);
+      },
+    );
+    const stillThereAfterTenantDelete = await getAiExecutionById(orgAlfa.id, execution.id);
+    expect(stillThereAfterTenantDelete).not.toBeNull();
 
     // Try deleting directly with adminSql without allow_config_cleanup -> rejected by database trigger
     await expect(
