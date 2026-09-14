@@ -8,6 +8,7 @@ import type { Organization } from '../organizations/types';
 import {
   logAuditEvent,
   getEntityAuditHistory,
+  listAuditLogForOrganization,
 } from './service';
 
 const directUrl = process.env.DIRECT_URL;
@@ -260,6 +261,20 @@ describe('HU-006: Bitácora inmutable transversal', () => {
       },
     );
     expect(visibleInBeta.length).toBe(0);
+
+    // Query listAuditLogForOrganization from Beta context: should NOT see Alfa's entry
+    const betaAuditList = await withTenantContext(
+      { userId: adminBetaId, organizationId: orgBeta.id },
+      async (tx) => listAuditLogForOrganization(orgBeta.id, {}, tx),
+    );
+    expect(betaAuditList.entries.some((e) => e.id === entryAlfa.id)).toBe(false);
+
+    // Query listAuditLogForOrganization from Alfa context: should see Alfa's entry
+    const alfaAuditList = await withTenantContext(
+      { userId: adminAlfaId, organizationId: orgAlfa.id },
+      async (tx) => listAuditLogForOrganization(orgAlfa.id, {}, tx),
+    );
+    expect(alfaAuditList.entries.some((e) => e.id === entryAlfa.id)).toBe(true);
 
     // Cross-tenant write attempt from Org Beta context into Org Alfa
     await expect(

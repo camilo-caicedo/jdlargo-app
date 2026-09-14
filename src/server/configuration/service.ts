@@ -607,3 +607,37 @@ export async function compareConfigurationVersions(
     permissionsChanged,
   };
 }
+
+/**
+ * Lists configuration versions for an organization ordered by effective date / version.
+ * (HU-004 & Panel de administración consolidado)
+ */
+export async function listConfigurationVersions(
+  organizationId: string,
+  txClient?: DrizzleClient,
+): Promise<Pick<ConfigurationVersionDetail, 'id' | 'versionNumber' | 'status' | 'standard' | 'effectiveFrom' | 'publishedAt'>[]> {
+  const client = txClient || db;
+
+  const rows = await client
+    .select({
+      id: configurationVersions.id,
+      versionNumber: configurationVersions.versionNumber,
+      status: configurationVersions.status,
+      standard: configurationVersions.standard,
+      effectiveFrom: configurationVersions.effectiveFrom,
+      publishedAt: configurationVersions.publishedAt,
+    })
+    .from(configurationVersions)
+    .where(eq(configurationVersions.organizationId, organizationId))
+    .orderBy(desc(configurationVersions.effectiveFrom), desc(configurationVersions.createdAt));
+
+  return rows.map((r) => ({
+    id: r.id,
+    versionNumber: r.versionNumber,
+    status: r.status as 'draft' | 'published' | 'replaced',
+    standard: r.standard,
+    effectiveFrom: r.effectiveFrom,
+    publishedAt: r.publishedAt,
+  }));
+}
+

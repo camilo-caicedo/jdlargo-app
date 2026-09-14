@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gte, lte, lt, desc, or } from 'drizzle-orm';
 import { db, DrizzleClient } from '../db/client';
 import { auditLog } from '../db/schema';
 import { getActiveConfigurationVersion } from '../auth/role-config';
@@ -232,4 +232,90 @@ export async function getEntityAuditHistory(
     metadata: row.metadata as Record<string, unknown> | null,
     origin: row.origin as Record<string, unknown> | null,
   }));
+}
+
+export interface ListAuditLogFilter {
+  actorUserId?: string;
+  action?: string;
+  entity?: string;
+  from?: Date;
+  to?: Date;
+  limit?: number; // paginación, default 50
+  cursor?: string; // id del último registro leído
+}
+
+/**
+ * Lists audit log entries for an entire organization, supporting filters and pagination.
+ * (HU-006 & Panel de administración consolidado)
+ */
+export async function listAuditLogForOrganization(
+  organizationId: string,
+  filter: ListAuditLogFilter = {},
+  txClient?: DrizzleClient,
+): Promise<{ entries: AuditLogDetail[]; nextCursor: string | null }> {
+  const client = txClient || db;
+  const limit = filter.limit && filter.limit > 0 ? filter.limit : 50;
+
+  const conditions = [eq(auditLog.organizationId, organizationId)];
+
+  if (filter.actorUserId) {
+    conditions.push(eq(auditLog.actorUserId, filter.actorUserId));
+  }
+  if (filter.action) {
+    conditions.push(eq(auditLog.action, filter.action));
+  }
+  if (filter.entity) {
+    conditions.push(eq(auditLog.entity, filter.entity));
+  }
+  if (filter.from) {
+    conditions.push(gte(auditLog.occurredAt, filter.from));
+  }
+  if (filter.to) {
+    conditions.push(lte(auditLog.occurredAt, filter.to));
+  }
+
+  // If cursor provided, fetch its occurredAt/id to paginate backwards in time
+  if (filter.cursor) {
+    const [cursorRow] = await client
+      .select({ occurredAt: auditLog.occurredAt, id: auditLog.id })
+      .from(auditLog)
+      .where(and(eq(auditLog.organizationId, organizationId), eq(auditLog.id, filter.cursor)))
+      .limit(1);
+
+    if (cursorRow) {
+      conditions.push(
+        or(
+          lt(auditLog.occurredAt, cursorRow.occurredAt),
+          and(eq(auditLog.occurredAt, cursorRow.occurredAt), lt(auditLog.id, cursorRow.id)),
+        )!,
+      );
+    }
+  }
+
+  const rows = await client
+    .select()
+    .from(auditLog)
+    .where(and(...conditions))
+    .orderBy(desc(auditLog.occurredAt), desc(auditLog.id))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? pageRows[pageRows.length - 1].id : null;
+
+  const entries: AuditLogDetail[] = pageRows.map((row) => ({
+    ...row,
+    actorType: row.actorType as ActorType,
+    actorDetails: row.actorDetails as Record<string, unknown> | null,
+    requestOrigin: row.requestOrigin as RequestOrigin | null,
+    aiModel: row.aiModel as AiModelAudit | null,
+    eventHash: row.eventHash!,
+    metadata: row.metadata as Record<string, unknown> | null,
+    origin: row.origin as Record<string, unknown> | null,
+  }));
+
+  return {
+    entries,
+    nextCursor,
+  };
 }

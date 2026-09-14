@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import * as React from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { 
   Building2, 
   ChevronDown, 
@@ -12,24 +12,24 @@ import {
   ShieldCheck,
   Check,
   FolderKanban,
-  Settings,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { signOutAction } from '@/server/auth/actions';
-import type { ActiveMembershipSummary } from '@/server/organizations/use-cases';
+  Shield,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { signOutAction } from "@/server/auth/actions";
+import type { ActiveMembershipSummary } from "@/server/organizations/use-cases";
 
 interface AppNavigationMenuProps {
   currentMembership: ActiveMembershipSummary;
   memberships: ActiveMembershipSummary[];
   canManageMembers: boolean;
-  canViewConfiguration?: boolean;
+  canAccessAdmin?: boolean;
 }
 
 export function AppNavigationMenu({
   currentMembership,
   memberships,
   canManageMembers,
-  canViewConfiguration = false,
+  canAccessAdmin = false,
 }: AppNavigationMenuProps) {
   const pathname = usePathname();
   const [orgDropdownOpen, setOrgDropdownOpen] = React.useState(false);
@@ -42,15 +42,15 @@ export function AppNavigationMenu({
         setOrgDropdownOpen(false);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const basePath = `/app/${currentMembership.slug}`;
   const isDashboardActive = pathname === basePath;
   const isExpedientesActive = pathname.startsWith(`${basePath}/expedientes`);
   const isMiembrosActive = pathname.startsWith(`${basePath}/miembros`);
-  const isConfiguracionActive = pathname.startsWith(`${basePath}/configuracion`);
+  const isAdminActive = pathname.startsWith(`${basePath}/admin`);
 
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur">
@@ -102,8 +102,8 @@ export function AppNavigationMenu({
                             onClick={() => setOrgDropdownOpen(false)}
                             className={`flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors ${
                               isCurrent
-                                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
-                                : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                                ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300"
+                                : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                             }`}
                           >
                             <div className="flex items-center gap-2 truncate">
@@ -142,8 +142,8 @@ export function AppNavigationMenu({
               href={basePath}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 isDashboardActive
-                  ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                  ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold"
+                  : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
               }`}
             >
               <LayoutDashboard className="w-3.5 h-3.5" />
@@ -154,8 +154,8 @@ export function AppNavigationMenu({
               href={`${basePath}/expedientes`}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 isExpedientesActive
-                  ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                  ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold"
+                  : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
               }`}
             >
               <FolderKanban className="w-3.5 h-3.5" />
@@ -167,8 +167,8 @@ export function AppNavigationMenu({
                 href={`${basePath}/miembros`}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   isMiembrosActive
-                    ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                    ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                 }`}
               >
                 <Users className="w-3.5 h-3.5" />
@@ -176,17 +176,17 @@ export function AppNavigationMenu({
               </Link>
             )}
 
-            {canViewConfiguration && (
+            {canAccessAdmin && (
               <Link
-                href={`${basePath}/configuracion`}
+                href={`${basePath}/admin`}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  isConfiguracionActive
-                    ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50'
+                  isAdminActive
+                    ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                 }`}
               >
-                <Settings className="w-3.5 h-3.5" />
-                Configuración
+                <Shield className="w-3.5 h-3.5" />
+                Administración
               </Link>
             )}
           </nav>
@@ -219,8 +219,8 @@ export function AppNavigationMenu({
             href={basePath}
             className={`flex items-center gap-1 px-2.5 py-1 rounded-md shrink-0 ${
               isDashboardActive
-                ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100'
-                : 'text-zinc-600 dark:text-zinc-400'
+                ? "bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100"
+                : "text-zinc-600 dark:text-zinc-400"
             }`}
           >
             <LayoutDashboard className="w-3 h-3" />
@@ -230,8 +230,8 @@ export function AppNavigationMenu({
             href={`${basePath}/expedientes`}
             className={`flex items-center gap-1 px-2.5 py-1 rounded-md shrink-0 ${
               isExpedientesActive
-                ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100'
-                : 'text-zinc-600 dark:text-zinc-400'
+                ? "bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100"
+                : "text-zinc-600 dark:text-zinc-400"
             }`}
           >
             <FolderKanban className="w-3 h-3" />
@@ -242,25 +242,25 @@ export function AppNavigationMenu({
               href={`${basePath}/miembros`}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-md shrink-0 ${
                 isMiembrosActive
-                  ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100'
-                  : 'text-zinc-600 dark:text-zinc-400'
+                  ? "bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100"
+                  : "text-zinc-600 dark:text-zinc-400"
               }`}
             >
               <Users className="w-3 h-3" />
               Miembros
             </Link>
           )}
-          {canViewConfiguration && (
+          {canAccessAdmin && (
             <Link
-              href={`${basePath}/configuracion`}
+              href={`${basePath}/admin`}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-md shrink-0 ${
-                isConfiguracionActive
-                  ? 'bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100'
-                  : 'text-zinc-600 dark:text-zinc-400'
+                isAdminActive
+                  ? "bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-900 dark:text-zinc-100"
+                  : "text-zinc-600 dark:text-zinc-400"
               }`}
             >
-              <Settings className="w-3 h-3" />
-              Configuración
+              <Shield className="w-3 h-3" />
+              Administración
             </Link>
           )}
         </div>

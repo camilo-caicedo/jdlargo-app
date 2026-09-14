@@ -17,6 +17,7 @@ import {
   getConfigurationAtDate,
   getConfigurationVersionDetail,
   compareConfigurationVersions,
+  listConfigurationVersions,
 } from './service';
 
 const directUrl = process.env.DIRECT_URL;
@@ -380,4 +381,17 @@ describe('HU-004: Publicación de versiones de configuración inmutables', () =>
     expect(forbiddenLogs.length).toBeGreaterThan(0);
     expect(forbiddenLogs[0].metadata.permission).toBe('configuration:publish');
   });
+
+  it('lista las versiones de configuración de la organización ordenadas', async () => {
+    const listA = await listConfigurationVersions(orgA.id);
+    expect(listA.length).toBeGreaterThan(0);
+    expect(listA.some((v) => v.versionNumber === '1')).toBe(true);
+
+    const listB = await listConfigurationVersions(orgB.id);
+    expect(listB.length).toBeGreaterThan(0);
+    // Org B should not see Org A's version IDs
+    const orgAVersionIds = new Set(listA.map((v) => v.id));
+    expect(listB.some((v) => orgAVersionIds.has(v.id))).toBe(false);
+  });
 });
+

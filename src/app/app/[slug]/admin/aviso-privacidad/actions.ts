@@ -82,7 +82,7 @@ export async function savePrivacyNoticeAction(
       purposes: parsed.data.purposes,
     });
 
-    revalidatePath(`/app/${slug}/configuracion`);
+    revalidatePath(`/app/${slug}/admin/aviso-privacidad`);
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al guardar el aviso de privacidad';
@@ -109,7 +109,7 @@ export async function createDraftForEditingAction(
       organizationId,
     });
 
-    revalidatePath(`/app/${slug}/configuracion`);
+    revalidatePath(`/app/${slug}/admin/aviso-privacidad`);
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al crear borrador de configuración';
@@ -146,7 +146,7 @@ export async function publishDraftAction(
       reason,
     });
 
-    revalidatePath(`/app/${slug}/configuracion`);
+    revalidatePath(`/app/${slug}/admin/aviso-privacidad`);
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al publicar la versión de configuración';
