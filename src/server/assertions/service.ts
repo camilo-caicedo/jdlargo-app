@@ -2,6 +2,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
 import { assertions } from '../db/schema';
 import { logAuditEvent } from '../audit/service';
+import { enforceUserPermission } from '../auth/access-control';
 
 export type AssertionOrigin = 'declared' | 'extracted' | 'verified' | 'evaluated';
 export type AssertionStatus = 'active' | 'discarded';
@@ -215,6 +216,19 @@ export async function resolveDiscrepancy(
   input: ResolveDiscrepancyInput,
   txClient?: DrizzleClient,
 ): Promise<{ activeAssertion: AssertionDetail; discardedAssertions: AssertionDetail[] }> {
+  await enforceUserPermission(
+    {
+      userId: input.resolvedBy,
+      organizationId: input.organizationId,
+    },
+    'dossier:review',
+    {
+      dossierId: input.dossierId,
+      field: input.field,
+    },
+    txClient,
+  );
+
   if (!input.resolutionNote || input.resolutionNote.trim() === '') {
     throw new Error('La resolución de una discrepancia exige una justificación o fundamento');
   }
@@ -336,5 +350,36 @@ export async function getLatestDeclaredValuesForDossier(
   }
 
   return results;
+}
+
+/**
+ * Retrieves all active assertions for a dossier regardless of field or origin.
+ * (HU-019)
+ */
+export async function getActiveAssertionsForDossier(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+): Promise<AssertionDetail[]> {
+  const client = txClient || db;
+
+  const rows = await client
+    .select()
+    .from(assertions)
+    .where(
+      and(
+        eq(assertions.organizationId, organizationId),
+        eq(assertions.dossierId, dossierId),
+        eq(assertions.status, 'active'),
+      ),
+    )
+    .orderBy(desc(assertions.producedAt));
+
+  return rows.map((r) => ({
+    ...r,
+    origin: r.origin as AssertionOrigin,
+    status: r.status as AssertionStatus,
+    aiModelMetadata: r.aiModelMetadata as AiModelMetadata | null,
+  }));
 }
 

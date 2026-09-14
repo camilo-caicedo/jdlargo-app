@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
 import { withTenantContext } from '../db/client';
-import { createOrganizationWithAdmin } from '../organizations/use-cases';
+import { createOrganizationWithAdmin, grantMembership } from '../organizations/use-cases';
 import { seedBaseConfiguration, getActiveConfigurationVersion } from '../auth/role-config';
 import type { Organization } from '../organizations/types';
 import {
@@ -120,6 +120,7 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
   let orgAlfa: Organization;
   let orgBeta: Organization;
   let adminAlfaId: string;
+  let analystAlfaId: string;
   let adminBetaId: string;
   let configurationVersionId: string;
   let dossierId: string;
@@ -133,6 +134,13 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
     await seedBaseConfiguration(orgAlfa.id, adminAlfaId);
     const activeVer = await getActiveConfigurationVersion(orgAlfa.id);
     configurationVersionId = activeVer!.id;
+
+    analystAlfaId = await createTestAuthUser('analystAlfa@test-hu005.com', 'Analyst Alfa');
+    await grantMembership(adminAlfaId, {
+      organizationId: orgAlfa.id,
+      userId: analystAlfaId,
+      role: 'compliance_analyst',
+    });
 
     adminBetaId = await createTestAuthUser('adminBeta@test-hu005.com', 'Admin Beta');
     orgBeta = await createOrganizationWithAdmin(adminBetaId, { name: 'Beta Ficticia S.A.S.' });
@@ -401,13 +409,25 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
       evidenceId: 'doc_rut_2025.pdf',
     });
 
-    // Compliance Officer resolves discrepancy in favor of 'verified'
+    // Analyst without dossier:review (or unassigned user) is rejected
+    await expect(
+      resolveDiscrepancy({
+        organizationId: orgAlfa.id,
+        dossierId,
+        field: fieldName,
+        selectedAssertionId: verif.id,
+        resolvedBy: adminAlfaId, // admin role does NOT have dossier:review
+        resolutionNote: 'Admin intentando resolver sin permiso dossier:review',
+      }),
+    ).rejects.toThrow(/falta el permiso 'dossier:review'/);
+
+    // Compliance Analyst with dossier:review resolves discrepancy in favor of 'verified'
     const resolution = await resolveDiscrepancy({
       organizationId: orgAlfa.id,
       dossierId,
       field: fieldName,
       selectedAssertionId: verif.id,
-      resolvedBy: adminAlfaId,
+      resolvedBy: analystAlfaId,
       resolutionNote: 'Se toma el valor del RUT oficial presentado y cotejado ante DIAN',
     });
 
@@ -420,7 +440,7 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
     expect(resolution.discardedAssertions[0].resolutionNote).toBe(
       'Se toma el valor del RUT oficial presentado y cotejado ante DIAN'
     );
-    expect(resolution.discardedAssertions[0].resolvedBy).toBe(adminAlfaId);
+    expect(resolution.discardedAssertions[0].resolvedBy).toBe(analystAlfaId);
 
     // Check that the discarded assertion was NOT deleted from the database
     const allDbRows = await adminSql`

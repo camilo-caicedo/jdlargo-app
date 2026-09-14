@@ -8,11 +8,13 @@ import { executeTransition } from './state-machine';
 import { isRequirementCurrentlyRequired } from '@/lib/requirement-evaluation';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
+import { getOpenDiscrepancies } from '../reconciliation/service';
 
 export class IncompleteReviewError extends Error {
   constructor(
     public missingFields: string[],
     public missingOrInvalidDocumentTypes: string[],
+    public openDiscrepancyFields: string[] = [],
   ) {
     const parts: string[] = [];
     if (missingFields.length > 0) {
@@ -20,6 +22,9 @@ export class IncompleteReviewError extends Error {
     }
     if (missingOrInvalidDocumentTypes.length > 0) {
       parts.push(`documentos obligatorios pendientes o no válidos: ${missingOrInvalidDocumentTypes.join(', ')}`);
+    }
+    if (openDiscrepancyFields.length > 0) {
+      parts.push(`discrepancias abiertas pendientes de resolver: ${openDiscrepancyFields.join(', ')}`);
     }
     super(`No se puede dar por revisado el expediente: ${parts.join('; ')}`);
     this.name = 'IncompleteReviewError';
@@ -71,6 +76,7 @@ export interface ReviewSummary {
   missingFields: string[];
   missingOrInvalidDocumentTypes: string[];
   blockingMissingKeys: string[];
+  openDiscrepancyFields: string[];
   canOverride: boolean;
   isReadyForDecision: boolean;
 }
@@ -129,13 +135,28 @@ export async function getReviewSummary(
     }
   }
 
-  const isReadyForDecision = missingFields.length === 0 && missingOrInvalidDocumentTypes.length === 0;
-  const canOverride = !isReadyForDecision && blockingMissingKeys.length === 0;
+  // 3. Open discrepancies on currently required fields (HU-019)
+  const openDiscrepancies = await getOpenDiscrepancies(organizationId, dossierId, client);
+  const openDiscrepancyFields = openDiscrepancies
+    .filter((d) => d.isBlocking)
+    .map((d) => d.field);
+
+  const isReadyForDecision =
+    missingFields.length === 0 &&
+    missingOrInvalidDocumentTypes.length === 0 &&
+    openDiscrepancyFields.length === 0;
+
+  // An override is possible ONLY if there are no blocking missing requirements AND no open blocking discrepancies
+  const canOverride =
+    !isReadyForDecision &&
+    blockingMissingKeys.length === 0 &&
+    openDiscrepancyFields.length === 0;
 
   return {
     missingFields,
     missingOrInvalidDocumentTypes,
     blockingMissingKeys,
+    openDiscrepancyFields,
     canOverride,
     isReadyForDecision,
   };
@@ -144,7 +165,7 @@ export async function getReviewSummary(
 /**
  * Completes review and transitions dossier to 'pendiente_de_decision'.
  * Supports override exception path if all missing requirements are non-blocking and actor has dossier:approve.
- * (HU-014 / PA-029)
+ * (HU-014 / PA-029 / HU-019)
  */
 export async function completeReview(
   input: {
@@ -185,7 +206,7 @@ export async function completeReview(
   const summary = await getReviewSummary(input.organizationId, input.dossierId, client);
 
   if (summary.isReadyForDecision) {
-    // Standard path: all requirements met
+    // Standard path: all requirements met and no open discrepancies
     await executeTransition(
       {
         organizationId: input.organizationId,
@@ -199,11 +220,21 @@ export async function completeReview(
     return;
   }
 
+  // Blocking check: Open discrepancies on currently required fields NEVER allow override exception (HU-019 §2)
+  if (summary.openDiscrepancyFields.length > 0) {
+    throw new IncompleteReviewError(
+      summary.missingFields,
+      summary.missingOrInvalidDocumentTypes,
+      summary.openDiscrepancyFields,
+    );
+  }
+
   // Not ready for decision
   if (!input.override) {
     throw new IncompleteReviewError(
       summary.missingFields,
       summary.missingOrInvalidDocumentTypes,
+      summary.openDiscrepancyFields,
     );
   }
 
@@ -213,6 +244,7 @@ export async function completeReview(
     throw new IncompleteReviewError(
       summary.missingFields,
       summary.missingOrInvalidDocumentTypes,
+      summary.openDiscrepancyFields,
     );
   }
 

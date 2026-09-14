@@ -758,4 +758,134 @@ describe('HU-014: Revisión del expediente y solicitud de correcciones', () => {
     `;
     expect(decidedDossier.state).toBe('aprobada');
   });
+
+  it('Escenario: Discrepancia abierta sobre campo obligatorio impide completeReview, incluso con override (HU-019)', async () => {
+    // 1. Setup draft with requirement for 'razon_social' (mandatory: always, blocking: false - to test that discrepancy itself blocks override)
+    const draft = await createDraftConfiguration({
+      organizationId: orgId,
+      standard: 'SARLAFT',
+    });
+
+    const cpType = await addCounterpartyType({
+      organizationId: orgId,
+      configurationVersionId: draft.versionId,
+      name: 'proveedor_con_discrepancia',
+      nature: 'legal_entity',
+    });
+
+    await addRequirement({
+      organizationId: orgId,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'razon_social',
+      mandatory: 'always',
+      blocking: false, // Even if requirement itself is non-blocking, discrepancy must block override
+      validation: { dataType: 'string' },
+    });
+
+    await publishDraftConfiguration({
+      organizationId: orgId,
+      versionId: draft.versionId,
+      publishedBy: adminUserId,
+      reason: 'Versión para probar discrepancia bloqueante',
+    });
+
+    // 2. Create dossier and advance to en_revision
+    const discDossier = await createDossierRequest({
+      organizationId: orgId,
+      requestedBy: adminUserId,
+      counterpartyTypeName: 'proveedor_con_discrepancia',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '900999888-3',
+        declaredName: 'Empresa Discrepante SAS',
+      },
+      internalOwnerId: adminUserId,
+    });
+
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: discDossier.id,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminUserId,
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: discDossier.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+
+    // 3. Register declared assertion
+    await registerAssertion({
+      organizationId: orgId,
+      dossierId: discDossier.id,
+      partyId: discDossier.partyId,
+      configurationVersionId: discDossier.configurationVersionId,
+      field: 'razon_social',
+      value: 'Empresa Discrepante SAS',
+      origin: 'declared',
+    });
+
+    // 4. Register conflicting verified assertion
+    await registerAssertion({
+      organizationId: orgId,
+      dossierId: discDossier.id,
+      partyId: discDossier.partyId,
+      configurationVersionId: discDossier.configurationVersionId,
+      field: 'razon_social',
+      value: 'Empresa Diferente Logistica SAS',
+      origin: 'verified',
+      producedBy: officerUserId,
+      evidenceId: 'doc_camara_comercio.pdf',
+    });
+
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: discDossier.id,
+      toState: 'documentos_recibidos',
+      actorType: 'counterparty',
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: discDossier.id,
+      toState: 'en_revision',
+      actorType: 'user',
+      actorId: analystUserId,
+    });
+
+    // 5. Review summary must reflect openDiscrepancyFields and canOverride = false
+    const summary = await getReviewSummary(orgId, discDossier.id);
+    expect(summary.isReadyForDecision).toBe(false);
+    expect(summary.openDiscrepancyFields).toContain('razon_social');
+    expect(summary.canOverride).toBe(false);
+
+    // 6. Complete review must throw IncompleteReviewError including discrepancy message
+    await expect(
+      completeReview({
+        organizationId: orgId,
+        dossierId: discDossier.id,
+        reviewedBy: officerUserId,
+      }),
+    ).rejects.toThrow(/discrepancias abiertas pendientes de resolver: razon_social/);
+
+    // 7. Even with override and dossier:approve permission, review must still be rejected
+    await expect(
+      completeReview({
+        organizationId: orgId,
+        dossierId: discDossier.id,
+        reviewedBy: officerUserId,
+        override: { reason: 'Intentando forzar excepcion a pesar de discrepancia' },
+      }),
+    ).rejects.toThrow(/discrepancias abiertas pendientes de resolver: razon_social/);
+
+    // State remains in en_revision
+    const [dossierRow] = await adminSql`
+      SELECT state FROM public.dossiers WHERE id = ${discDossier.id}::uuid
+    `;
+    expect(dossierRow.state).toBe('en_revision');
+  });
 });
