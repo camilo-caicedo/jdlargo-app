@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { eq, and, gte, lte, lt, desc, or } from 'drizzle-orm';
 import { db, DrizzleClient } from '../db/client';
-import { auditLog } from '../db/schema';
+import { auditLog, users } from '../db/schema';
 import { getActiveConfigurationVersion } from '../auth/role-config';
 
 export type ActorType = 'user' | 'system' | 'counterparty';
@@ -56,6 +56,8 @@ export interface AuditLogDetail {
   id: string;
   organizationId: string;
   actorUserId: string | null;
+  actorUserName?: string | null;
+  actorUserEmail?: string | null;
   actorType: ActorType;
   actorDetails: Record<string, unknown> | null;
   action: string;
@@ -211,8 +213,13 @@ export async function getEntityAuditHistory(
   const client = txClient || db;
 
   const rows = await client
-    .select()
+    .select({
+      log: auditLog,
+      actorUserName: users.name,
+      actorUserEmail: users.email,
+    })
     .from(auditLog)
+    .leftJoin(users, eq(auditLog.actorUserId, users.id))
     .where(
       and(
         eq(auditLog.organizationId, organizationId),
@@ -222,15 +229,17 @@ export async function getEntityAuditHistory(
     )
     .orderBy(auditLog.occurredAt);
 
-  return rows.map((row) => ({
-    ...row,
-    actorType: row.actorType as ActorType,
-    actorDetails: row.actorDetails as Record<string, unknown> | null,
-    requestOrigin: row.requestOrigin as RequestOrigin | null,
-    aiModel: row.aiModel as AiModelAudit | null,
-    eventHash: row.eventHash!,
-    metadata: row.metadata as Record<string, unknown> | null,
-    origin: row.origin as Record<string, unknown> | null,
+  return rows.map(({ log, actorUserName, actorUserEmail }) => ({
+    ...log,
+    actorUserName: actorUserName || null,
+    actorUserEmail: actorUserEmail || null,
+    actorType: log.actorType as ActorType,
+    actorDetails: log.actorDetails as Record<string, unknown> | null,
+    requestOrigin: log.requestOrigin as RequestOrigin | null,
+    aiModel: log.aiModel as AiModelAudit | null,
+    eventHash: log.eventHash!,
+    metadata: log.metadata as Record<string, unknown> | null,
+    origin: log.origin as Record<string, unknown> | null,
   }));
 }
 
@@ -293,25 +302,32 @@ export async function listAuditLogForOrganization(
   }
 
   const rows = await client
-    .select()
+    .select({
+      log: auditLog,
+      actorUserName: users.name,
+      actorUserEmail: users.email,
+    })
     .from(auditLog)
+    .leftJoin(users, eq(auditLog.actorUserId, users.id))
     .where(and(...conditions))
     .orderBy(desc(auditLog.occurredAt), desc(auditLog.id))
     .limit(limit + 1);
 
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const nextCursor = hasMore ? pageRows[pageRows.length - 1].id : null;
+  const nextCursor = hasMore ? pageRows[pageRows.length - 1].log.id : null;
 
-  const entries: AuditLogDetail[] = pageRows.map((row) => ({
-    ...row,
-    actorType: row.actorType as ActorType,
-    actorDetails: row.actorDetails as Record<string, unknown> | null,
-    requestOrigin: row.requestOrigin as RequestOrigin | null,
-    aiModel: row.aiModel as AiModelAudit | null,
-    eventHash: row.eventHash!,
-    metadata: row.metadata as Record<string, unknown> | null,
-    origin: row.origin as Record<string, unknown> | null,
+  const entries: AuditLogDetail[] = pageRows.map(({ log, actorUserName, actorUserEmail }) => ({
+    ...log,
+    actorUserName: actorUserName || null,
+    actorUserEmail: actorUserEmail || null,
+    actorType: log.actorType as ActorType,
+    actorDetails: log.actorDetails as Record<string, unknown> | null,
+    requestOrigin: log.requestOrigin as RequestOrigin | null,
+    aiModel: log.aiModel as AiModelAudit | null,
+    eventHash: log.eventHash!,
+    metadata: log.metadata as Record<string, unknown> | null,
+    origin: log.origin as Record<string, unknown> | null,
   }));
 
   return {

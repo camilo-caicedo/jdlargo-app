@@ -63,6 +63,8 @@ export default async function BitacoraPage({
     id: e.id,
     organizationId: e.organizationId,
     actorUserId: e.actorUserId,
+    actorUserName: e.actorUserName || null,
+    actorUserEmail: e.actorUserEmail || null,
     actorType: e.actorType,
     action: e.action,
     entity: e.entity,

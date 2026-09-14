@@ -24,6 +24,8 @@ interface AuditEntry {
   id: string;
   organizationId: string;
   actorUserId: string | null;
+  actorUserName?: string | null;
+  actorUserEmail?: string | null;
   actorType: "user" | "system" | "counterparty";
   action: string;
   entity: string | null;
@@ -250,7 +252,12 @@ export function BitacoraClient({
                         ) : (
                           <>
                             <User className="h-3.5 w-3.5 text-zinc-500" />
-                            <span className="text-zinc-700 dark:text-zinc-300">Usuario</span>
+                            <span
+                              className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-[150px]"
+                              title={entry.actorUserEmail ? `${entry.actorUserName || "Usuario"} (${entry.actorUserEmail})` : (entry.actorUserName || "Usuario")}
+                            >
+                              {entry.actorUserName || entry.actorUserEmail || "Usuario"}
+                            </span>
                           </>
                         )}
                       </div>
@@ -331,7 +338,19 @@ export function BitacoraClient({
                   {new Date(inspectedEntry.occurredAt).toLocaleString("es-CO")}
                 </div>
                 <div>
-                  <span className="text-zinc-500 font-medium">Actor:</span> {inspectedEntry.actorType}
+                  <span className="text-zinc-500 font-medium">Actor:</span>{" "}
+                  {inspectedEntry.actorType === "system" ? (
+                    <span className="text-blue-600 dark:text-blue-400 font-medium">Sistema</span>
+                  ) : inspectedEntry.automatic ? (
+                    <span className="text-purple-600 dark:text-purple-400 font-medium">IA / Automático</span>
+                  ) : (
+                    <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                      {inspectedEntry.actorUserName || inspectedEntry.actorUserEmail || "Usuario"}
+                      {inspectedEntry.actorUserEmail && inspectedEntry.actorUserName ? (
+                        <span className="text-zinc-500 font-normal ml-1">({inspectedEntry.actorUserEmail})</span>
+                      ) : null}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className="text-zinc-500 font-medium">Hash Criptográfico:</span>{" "}
@@ -400,9 +419,20 @@ export function BitacoraClient({
                     <div className="absolute -left-[9px] top-1.5 h-4 w-4 rounded-full border-2 border-white dark:border-zinc-950 bg-zinc-400" />
                     <div className="p-3 rounded-lg border bg-zinc-50/50 dark:bg-zinc-900/50 space-y-2 text-xs">
                       <div className="flex items-center justify-between">
-                        <code className="font-semibold text-zinc-900 dark:text-zinc-100">
-                          {item.action}
-                        </code>
+                        <div className="flex items-center gap-2">
+                          <code className="font-semibold text-zinc-900 dark:text-zinc-100">
+                            {item.action}
+                          </code>
+                          <span className="text-[11px] text-zinc-500 font-medium">
+                            • {item.actorType === "system" ? (
+                              "Sistema"
+                            ) : item.automatic ? (
+                              "IA / Auto"
+                            ) : (
+                              item.actorUserName || item.actorUserEmail || "Usuario"
+                            )}
+                          </span>
+                        </div>
                         <span className="text-zinc-500 font-mono">
                           {new Date(item.occurredAt).toLocaleString("es-CO")}
                         </span>

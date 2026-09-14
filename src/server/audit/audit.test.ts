@@ -34,7 +34,15 @@ async function createTestAuthUser(email: string, name: string): Promise<string> 
       now()
     ) RETURNING id
   `;
-  return res[0].id;
+  const userId = res[0].id;
+  await adminSql`
+    INSERT INTO public.users (id, email, name)
+    VALUES (${userId}::uuid, ${email}, ${name})
+    ON CONFLICT (email) DO UPDATE
+    SET id = EXCLUDED.id,
+        name = EXCLUDED.name
+  `;
+  return userId;
 }
 
 const TEST_ORG_NAMES = [
@@ -338,8 +346,11 @@ describe('HU-006: Bitácora inmutable transversal', () => {
     const history = await getEntityAuditHistory(orgAlfa.id, entityType, entityId);
     expect(history.length).toBe(3);
     expect(history[0].action).toBe('dossier.created');
+    expect(history[0].actorUserName).toBe('Admin Alfa');
     expect(history[1].action).toBe('dossier.risk_evaluated');
+    expect(history[1].actorUserName).toBeNull();
     expect(history[2].action).toBe('dossier.approved');
+    expect(history[2].actorUserName).toBe('Admin Alfa');
     expect(history[2].reason).toBe('Cumple requisitos documentales y listas restrictivas limpias');
   });
 
