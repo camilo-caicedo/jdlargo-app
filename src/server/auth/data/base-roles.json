@@ -12,7 +12,8 @@
       "configuration:publish",
       "configuration:administer",
       "memberships:manage",
-      "audit:view"
+      "audit:view",
+      "ai_execution:view"
     ]
   },
   {
@@ -33,6 +34,7 @@
       "risk_methodology:view",
       "risk_methodology:edit",
       "audit:view",
+      "ai_execution:view",
       "configuration:view",
       "configuration:publish"
     ]
@@ -52,6 +54,7 @@
       "alert:view",
       "alert:resolve",
       "audit:view",
+      "ai_execution:view",
       "configuration:view"
     ]
   },
@@ -78,6 +81,7 @@
       "alert:view",
       "risk_methodology:view",
       "audit:view",
+      "ai_execution:view",
       "configuration:view"
     ]
   },

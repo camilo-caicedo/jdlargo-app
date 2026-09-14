@@ -27,6 +27,7 @@ export const PERMISSION_MODULES = [
   'audit',
   'configuration',
   'memberships',
+  'ai_execution',
 ] as const;
 
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
@@ -49,7 +50,8 @@ export type PermissionKey =
   | 'configuration:view'
   | 'configuration:publish'
   | 'configuration:administer'
-  | 'memberships:manage';
+  | 'memberships:manage'
+  | 'ai_execution:view';
 
 export const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'dossier:create',
@@ -70,6 +72,7 @@ export const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'configuration:publish',
   'configuration:administer',
   'memberships:manage',
+  'ai_execution:view',
 ] as const;
 
 export function isValidPermission(key: string): key is PermissionKey {

@@ -371,3 +371,32 @@ export const decisionConditions = pgTable('decision_conditions', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS();
 
+// ai_executions — bitácora inmutable de cada invocación a proveedores de IA (HU-018, §32)
+export const aiExecutions = pgTable('ai_executions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  documentId: uuid('document_id').references(() => documents.id),
+  provider: text('provider').notNull(),
+  model: text('model').notNull(),
+  modelVersion: text('model_version').notNull(),
+  instructionTemplateId: text('instruction_template_id').notNull(),
+  instructionTemplateVersion: text('instruction_template_version').notNull(),
+  dataDestination: text('data_destination').notNull(),
+  sentFragmentHash: text('sent_fragment_hash').notNull(),
+  sentFragmentReference: text('sent_fragment_reference'),
+  status: text('status', { enum: ['succeeded', 'failed'] }).notNull(),
+  result: jsonb('result'),
+  confidence: text('confidence'),
+  failureReason: text('failure_reason'),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
+  validatedBy: uuid('validated_by').references(() => users.id),
+  validatedAt: timestamp('validated_at', { withTimezone: true }),
+  finalResult: jsonb('final_result'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('ai_executions_dossier_idx').on(t.dossierId),
+  index('ai_executions_org_dossier_idx').on(t.organizationId, t.dossierId),
+]).enableRLS();
+
+
