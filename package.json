@@ -14,6 +14,7 @@
     "db:migrate:local": "node scripts/migrate-local.mjs"
   },
   "dependencies": {
+    "@ai-sdk/google": "^4.0.69",
     "@base-ui/react": "^1.8.0",
     "@hookform/resolvers": "^5.9.1",
     "@react-email/components": "^1.0.12",
@@ -21,6 +22,7 @@
     "@supabase/supabase-js": "^2.115.0",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.4",
+    "ai": "^7.0.100",
     "clamscan": "2.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -116,6 +116,7 @@ export const assertions = pgTable('assertions', {
   evidenceId: text('evidence_id'),
   confidence: text('confidence'),
   aiModelMetadata: jsonb('ai_model_metadata'),
+  aiExecutionId: uuid('ai_execution_id').references(() => aiExecutions.id),
   status: text('status', { enum: ['active', 'discarded'] }).notNull().default('active'),
   resolutionNote: text('resolution_note'),
   resolvedBy: uuid('resolved_by').references(() => users.id),

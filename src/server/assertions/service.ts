@@ -22,6 +22,7 @@ export interface RegisterAssertionInput {
   value: unknown;
   origin: AssertionOrigin;
   producedBy?: string;
+  aiExecutionId?: string;
   evidenceId?: string;
   confidence?: string; // Number 0.00 - 1.00 as string
   aiModelMetadata?: AiModelMetadata;
@@ -47,6 +48,7 @@ export interface AssertionDetail {
   origin: AssertionOrigin;
   producedBy: string | null;
   producedAt: Date;
+  aiExecutionId: string | null;
   evidenceId: string | null;
   confidence: string | null;
   aiModelMetadata: AiModelMetadata | null;
@@ -83,7 +85,7 @@ export async function registerAssertion(
     throw new Error(`Origen de afirmación inválido: ${input.origin}`);
   }
 
-  // 2. Validate extracted requirements: confidence and evidence mandatory
+  // 2. Validate extracted requirements: confidence, evidence and aiExecutionId mandatory
   if (input.origin === 'extracted') {
     if (!input.confidence) {
       throw new Error("Una afirmación con origen 'extracted' exige un nivel de confianza registrado");
@@ -95,6 +97,9 @@ export async function registerAssertion(
     if (!input.evidenceId) {
       throw new Error("Una afirmación con origen 'extracted' exige una evidencia asociada (documento)");
     }
+    if (!input.aiExecutionId) {
+      throw new Error("Una afirmación con origen 'extracted' exige una ejecución de IA asociada (aiExecutionId)");
+    }
   }
 
   // 3. Validate verified requirements: evidence mandatory
@@ -104,8 +109,8 @@ export async function registerAssertion(
     }
   }
 
-  // 4. Validate producer: non-declared origins strictly require producedBy
-  if (input.origin !== 'declared' && !input.producedBy) {
+  // 4. Validate producer: verified and evaluated origins strictly require producedBy (human user)
+  if ((input.origin === 'verified' || input.origin === 'evaluated') && !input.producedBy) {
     throw new Error(`Una afirmación con origen '${input.origin}' exige un usuario productor`);
   }
 
@@ -122,6 +127,7 @@ export async function registerAssertion(
         value: input.value,
         origin: input.origin,
         producedBy: input.producedBy || null,
+        aiExecutionId: input.aiExecutionId || null,
         evidenceId: input.evidenceId || null,
         confidence: input.confidence || null,
         aiModelMetadata: input.aiModelMetadata || null,
@@ -133,7 +139,7 @@ export async function registerAssertion(
     await logAuditEvent(
       {
         organizationId: input.organizationId,
-        actorType: input.producedBy ? 'user' : 'counterparty',
+        actorType: input.producedBy ? 'user' : input.origin === 'extracted' ? 'system' : 'counterparty',
         actorUserId: input.producedBy,
         action: 'assertion.registered',
         entity: 'assertion',
@@ -146,10 +152,11 @@ export async function registerAssertion(
           party_id: input.partyId,
           field: input.field,
           origin: input.origin,
+          ai_execution_id: input.aiExecutionId,
           evidence_id: input.evidenceId,
           confidence: input.confidence,
         },
-        origin: { actor: input.producedBy ? 'user' : 'counterparty', service: 'registerAssertion' },
+        origin: { actor: input.producedBy ? 'user' : input.origin === 'extracted' ? 'system' : 'counterparty', service: 'registerAssertion' },
       },
       tx,
     );

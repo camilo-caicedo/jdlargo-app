@@ -859,3 +859,67 @@ export async function rejectDocument(
   }
 }
 
+/**
+ * Marks a document as 'requires_review' with a reason by the system.
+ * (HU-017 Escenario: Documento ilegible o fallido en extracción)
+ */
+export async function markDocumentRequiresReview(
+  input: {
+    organizationId: string;
+    dossierId: string;
+    documentId: string;
+    reason: string;
+  },
+  txClient?: DrizzleClient,
+): Promise<void> {
+  const execute = async (tx: DatabaseTransaction) => {
+    const [doc] = await tx
+      .select()
+      .from(documents)
+      .where(
+        and(
+          eq(documents.organizationId, input.organizationId),
+          eq(documents.dossierId, input.dossierId),
+          eq(documents.id, input.documentId),
+        ),
+      )
+      .limit(1);
+
+    if (!doc) {
+      throw new Error('Documento no encontrado en el expediente especificado');
+    }
+
+    await tx
+      .update(documents)
+      .set({
+        state: 'requires_review',
+        rejectionReason: input.reason,
+      })
+      .where(eq(documents.id, input.documentId));
+
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: 'system',
+        action: 'document.marked_requires_review',
+        entity: 'document',
+        entityId: input.documentId,
+        metadata: {
+          dossierId: input.dossierId,
+          documentType: doc.documentType,
+          version: doc.version,
+          previousState: doc.state,
+          reason: input.reason,
+        },
+      },
+      tx,
+    );
+  };
+
+  if (txClient && 'execute' in txClient) {
+    await execute(txClient as DatabaseTransaction);
+  } else {
+    await db.transaction(execute);
+  }
+}
+

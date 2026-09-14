@@ -12,6 +12,7 @@ import {
   getLatestDeclaredValuesForDossier,
   type AssertionOrigin,
 } from './service';
+import { recordAiExecution } from '../ai/execution';
 
 const directUrl = process.env.DIRECT_URL;
 const adminSql = postgres(directUrl || '');
@@ -62,6 +63,10 @@ async function cleanupTestData() {
       SELECT id FROM public.dossiers
       WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
     )
+  `;
+  await adminSql`
+    DELETE FROM public.ai_executions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
   await adminSql`
     DELETE FROM public.dossiers
@@ -305,6 +310,21 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
   });
 
   it('Escenario: Lo extraído por la IA no asciende solo a verificado', async () => {
+    const aiExec = await recordAiExecution({
+      organizationId: orgAlfa.id,
+      dossierId,
+      provider: 'google',
+      model: 'gemini-1.5-pro',
+      modelVersion: '1.5-pro-latest',
+      instructionTemplateId: 'extract_ubo',
+      instructionTemplateVersion: '1.0',
+      dataDestination: 'US',
+      sentFragmentHash: 'fake_hash_123',
+      status: 'succeeded',
+      confidence: '0.92',
+      result: { beneficiario_final: 'Juan Perez (55%)' },
+    });
+
     // Register extracted assertion with confidence and AI model metadata
     const extracted = await registerAssertion({
       organizationId: orgAlfa.id,
@@ -316,16 +336,17 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
       origin: 'extracted',
       confidence: '0.92',
       evidenceId: 'doc_camara_comercio_extract.pdf',
+      aiExecutionId: aiExec.id,
       aiModelMetadata: {
         model: 'gemini-1.5-pro',
         provider: 'google',
         promptTemplate: 'extract_ubo_v1',
       },
-      producedBy: adminAlfaId,
     });
 
     expect(extracted.origin).toBe('extracted');
     expect(extracted.confidence).toBe('0.92');
+    expect(extracted.aiExecutionId).toBe(aiExec.id);
     expect(extracted.aiModelMetadata?.model).toBe('gemini-1.5-pro');
 
     // Attempting to change origin directly on database
@@ -490,7 +511,7 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
       expect(auditRow.actor_user_id).toBeNull();
     });
 
-    it('rechaza registrar afirmación sin producedBy cuando origin no es "declared"', async () => {
+    it('rechaza registrar afirmación sin aiExecutionId cuando origin es "extracted"', async () => {
       await expect(
         registerAssertion({
           organizationId: orgAlfa.id,
@@ -502,9 +523,25 @@ describe('HU-005: Registro de afirmaciones con procedencia', () => {
           origin: 'extracted',
           evidenceId: 'doc-123',
           confidence: '0.95',
+          // aiExecutionId omitted
+        }),
+      ).rejects.toThrow("Una afirmación con origen 'extracted' exige una ejecución de IA asociada (aiExecutionId)");
+    });
+
+    it('rechaza registrar afirmación sin producedBy cuando origin es "verified" o "evaluated"', async () => {
+      await expect(
+        registerAssertion({
+          organizationId: orgAlfa.id,
+          dossierId,
+          partyId,
+          configurationVersionId,
+          field: 'rut_tax_id',
+          value: '900123456-1',
+          origin: 'verified',
+          evidenceId: 'doc-123',
           // producedBy omitted
         }),
-      ).rejects.toThrow("Una afirmación con origen 'extracted' exige un usuario productor");
+      ).rejects.toThrow("Una afirmación con origen 'verified' exige un usuario productor");
     });
 
     it('getLatestDeclaredValuesForDossier devuelve solo la más reciente por campo y no borra la anterior', async () => {
