@@ -600,4 +600,125 @@ describe('HU-019: Conciliación de lo declarado con lo extraído', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it('Regresión: isBlocking usa el valor MÁS RECIENTE de un campo condicional, no el primero no-falsy', async () => {
+    // getOpenDiscrepancies construye un diccionario "latestValues" para evaluar condiciones
+    // (isRequirementCurrentlyRequired). Si ese diccionario se llena con `if (!latestValues[field])`
+    // en vez de comprobar presencia, un valor falsy (false/0/'') más reciente queda tapado por
+    // un valor más viejo -- exactamente el caso que esta prueba fija.
+    const draft = await createDraftConfiguration({ organizationId: orgAlfa.id, standard: 'SARLAFT' });
+    const cpType = await addCounterpartyType({
+      organizationId: orgAlfa.id,
+      configurationVersionId: draft.versionId,
+      name: 'proveedor_condicional',
+      nature: 'legal_entity',
+    });
+
+    await addRequirement({
+      organizationId: orgAlfa.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'es_pep',
+      mandatory: 'always',
+      blocking: true,
+      validation: { dataType: 'boolean' },
+    });
+
+    await addRequirement({
+      organizationId: orgAlfa.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: cpType.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'beneficiario_final',
+      mandatory: 'conditional',
+      blocking: true,
+      condition: { field: 'es_pep', operator: 'eq', value: true },
+      validation: { dataType: 'string' },
+    });
+
+    await publishDraftConfiguration({
+      organizationId: orgAlfa.id,
+      versionId: draft.versionId,
+      publishedBy: adminAlfaId,
+      reason: 'Versión para probar orden de latestValues',
+    });
+
+    const condDossier = await createDossierRequest({
+      organizationId: orgAlfa.id,
+      requestedBy: adminAlfaId,
+      counterpartyTypeName: 'proveedor_condicional',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '900777666-5',
+        declaredName: 'Empresa Condicional SAS',
+      },
+      internalOwnerId: adminAlfaId,
+    });
+
+    await executeTransition({
+      organizationId: orgAlfa.id,
+      dossierId: condDossier.id,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminAlfaId,
+    });
+    await executeTransition({
+      organizationId: orgAlfa.id,
+      dossierId: condDossier.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+
+    // es_pep: primero true (más viejo), luego false (más reciente) -- ambas activas, en conflicto.
+    await registerAssertion({
+      organizationId: orgAlfa.id,
+      dossierId: condDossier.id,
+      partyId: condDossier.partyId,
+      configurationVersionId: condDossier.configurationVersionId,
+      field: 'es_pep',
+      value: true,
+      origin: 'declared',
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    await registerAssertion({
+      organizationId: orgAlfa.id,
+      dossierId: condDossier.id,
+      partyId: condDossier.partyId,
+      configurationVersionId: condDossier.configurationVersionId,
+      field: 'es_pep',
+      value: false,
+      origin: 'declared',
+    });
+
+    // beneficiario_final: dos valores en conflicto, para que el campo aparezca en la lista de discrepancias
+    await registerAssertion({
+      organizationId: orgAlfa.id,
+      dossierId: condDossier.id,
+      partyId: condDossier.partyId,
+      configurationVersionId: condDossier.configurationVersionId,
+      field: 'beneficiario_final',
+      value: 'Juan Perez',
+      origin: 'declared',
+    });
+    await registerAssertion({
+      organizationId: orgAlfa.id,
+      dossierId: condDossier.id,
+      partyId: condDossier.partyId,
+      configurationVersionId: condDossier.configurationVersionId,
+      field: 'beneficiario_final',
+      value: 'Pedro Gomez',
+      origin: 'declared',
+    });
+
+    const discrepancies = await getOpenDiscrepancies(orgAlfa.id, condDossier.id);
+    const bfDiscrepancy = discrepancies.find((d) => d.field === 'beneficiario_final');
+
+    // El es_pep vigente (más reciente) es false, así que beneficiario_final NO está
+    // actualmente exigido -- su discrepancia no debe bloquear la decisión.
+    expect(bfDiscrepancy).toBeDefined();
+    expect(bfDiscrepancy?.isBlocking).toBe(false);
+  });
 });

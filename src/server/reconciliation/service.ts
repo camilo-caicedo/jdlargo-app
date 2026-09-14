@@ -92,7 +92,7 @@ export async function getOpenDiscrepancies(
   // Build values dictionary for condition evaluation
   const latestValues: Record<string, unknown> = {};
   for (const assertion of activeAssertions) {
-    if (!latestValues[assertion.field]) {
+    if (!(assertion.field in latestValues)) {
       latestValues[assertion.field] = assertion.value;
     }
   }
