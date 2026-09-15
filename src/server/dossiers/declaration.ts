@@ -10,7 +10,9 @@ import { getDossierPendingRequirements } from './dossier';
 import {
   registerAssertion,
   getLatestDeclaredValuesForDossier,
+  getActiveAssertionsForDossier,
 } from '../assertions/service';
+import { areValuesEqual } from '../reconciliation/service';
 import { executeTransition } from './state-machine';
 import { getLatestDocumentsForDossier } from '../documents/document';
 
@@ -31,15 +33,23 @@ export class IncompleteDeclarationError extends Error {
   }
 }
 
+export interface FieldSuggestion {
+  value: unknown;
+  assertionId: string;
+  evidenceId: string | null;
+  confidence: string | null;
+}
+
 export interface DeclarationFormData {
   dossierState: string;
   fieldRequirements: RequirementDetail[];
   documentRequirements: RequirementDetail[];
   values: Record<string, unknown>;
+  suggestions: Record<string, FieldSuggestion>;
 }
 
 /**
- * Retrieves the declaration form data for a dossier, including frozen requirements and current values.
+ * Retrieves the declaration form data for a dossier, including frozen requirements, current values, and AI suggestions.
  */
 export async function getDeclarationForm(
   organizationId: string,
@@ -76,11 +86,44 @@ export async function getDeclarationForm(
     values[item.field] = item.value;
   }
 
+  // Calculate suggestions from extracted assertions
+  const suggestions: Record<string, FieldSuggestion> = {};
+  const activeAssertions = await getActiveAssertionsForDossier(organizationId, dossierId, client);
+
+  // Group extracted assertions by field, taking the most recent
+  const extractedByField = new Map<string, (typeof activeAssertions)[number]>();
+  for (const assertion of activeAssertions) {
+    if (assertion.origin === 'extracted') {
+      const existing = extractedByField.get(assertion.field);
+      // Keep the most recent (already ordered by producedAt desc from getActiveAssertionsForDossier)
+      if (!existing) {
+        extractedByField.set(assertion.field, assertion);
+      }
+    }
+  }
+
+  // Build suggestions: include if no declared value or if declared value differs from extracted
+  for (const [field, extracted] of extractedByField.entries()) {
+    const declaredValue = values[field];
+    const shouldInclude =
+      declaredValue === undefined || !areValuesEqual(declaredValue, extracted.value);
+
+    if (shouldInclude) {
+      suggestions[field] = {
+        value: extracted.value,
+        assertionId: extracted.id,
+        evidenceId: extracted.evidenceId,
+        confidence: extracted.confidence,
+      };
+    }
+  }
+
   return {
     dossierState: dossier.state,
     fieldRequirements,
     documentRequirements,
     values,
+    suggestions,
   };
 }
 

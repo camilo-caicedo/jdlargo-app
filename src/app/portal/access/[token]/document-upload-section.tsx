@@ -446,7 +446,7 @@ export function DocumentUploadSection({
                     <span>
                       {state.status === 'requesting' && 'Solicitando subida...'}
                       {state.status === 'uploading' && 'Subiendo archivo...'}
-                      {state.status === 'confirming' && 'Verificando formato e integridad...'}
+                      {state.status === 'confirming' && 'Subiendo y analizando documento...'}
                     </span>
                   </div>
                 )}

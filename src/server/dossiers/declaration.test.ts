@@ -25,6 +25,8 @@ import {
   IncompleteDeclarationError,
 } from './declaration';
 import { confirmDocumentUpload } from '../documents/document';
+import { registerAssertion } from '../assertions/service';
+import { recordAiExecution } from '../ai/execution';
 
 const directUrl = process.env.DIRECT_URL;
 const adminSql = postgres(directUrl || '');
@@ -64,6 +66,10 @@ async function cleanupTestData() {
   `;
   await adminSql`
     DELETE FROM public.assertions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+  await adminSql`
+    DELETE FROM public.ai_executions
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
   await adminSql`
@@ -156,7 +162,7 @@ describe('HU-012: Formulario dinámico de identificación', () => {
     const typeProveedor = await addCounterpartyType({
       organizationId: orgId,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     typeProveedorId = typeProveedor.id;
@@ -243,7 +249,7 @@ describe('HU-012: Formulario dinámico de identificación', () => {
     const dossierProv = await createDossierRequest({
       organizationId: orgId,
       requestedBy: adminUserId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900999888',
@@ -519,5 +525,345 @@ describe('HU-012: Formulario dinámico de identificación', () => {
       organizationId: orgId,
       dossierId: dossierProveedorId,
     });
+  });
+
+  it('Sugerencias: Campo sin valor declared y con extracted aparece en suggestions', async () => {
+    // Create a fresh dossier for this test to avoid state from previous tests
+    const dossierTest = await createDossierRequest({
+      organizationId: orgId,
+      requestedBy: adminUserId,
+      counterpartyTypeName: 'proveedor_custom',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '999999999',
+        declaredName: 'Test Company Suggestions',
+      },
+      internalOwnerId: adminUserId,
+    });
+
+    // Transition to en_diligenciamiento
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest.id,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminUserId,
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+
+    // Create a test document first
+    const docResult = await adminSql`
+      INSERT INTO public.documents (
+        organization_id, dossier_id, document_type, version, storage_path, hash, size, format, state, uploaded_by_type
+      ) VALUES (
+        ${orgId}::uuid, ${dossierTest.id}::uuid, 'doc_rut', 1, 'path/to/doc', 'fakehash123', 1024, 'pdf', 'received', 'counterparty'
+      ) RETURNING id
+    `;
+    const docId = docResult[0].id;
+
+    // Get the dossier's partyId and configurationVersionId for creating assertions
+    const [dossierData] = await adminSql`
+      SELECT party_id, configuration_version_id FROM public.dossiers WHERE id = ${dossierTest.id}::uuid
+    `;
+
+    // Register an extracted assertion for razon_social (no declared value yet)
+    // Use producedBy to make it a human-corrected assertion (doesn't require aiExecutionId)
+    await registerAssertion(
+      {
+        organizationId: orgId,
+        dossierId: dossierTest.id,
+        partyId: dossierData.party_id,
+        configurationVersionId: dossierData.configuration_version_id,
+        field: 'razon_social',
+        value: 'Empresa Sugerida S.A.S.',
+        origin: 'extracted',
+        confidence: '0.95',
+        evidenceId: docId,
+        producedBy: analystUserId,
+      },
+    );
+
+    // Get the form and check suggestions
+    const form = await getDeclarationForm(orgId, dossierTest.id);
+    expect(form.values['razon_social']).toBeUndefined();
+    expect(form.suggestions['razon_social']).toBeDefined();
+    expect(form.suggestions['razon_social'].value).toBe('Empresa Sugerida S.A.S.');
+    expect(form.suggestions['razon_social'].confidence).toBe('0.95');
+  });
+
+  it('Sugerencias: Campo con declared y extracted iguales NO aparece en suggestions', async () => {
+    // Create another fresh dossier
+    const dossierTest2 = await createDossierRequest({
+      organizationId: orgId,
+      requestedBy: adminUserId,
+      counterpartyTypeName: 'proveedor_custom',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '888888888',
+        declaredName: 'Test Company Equal Values',
+      },
+      internalOwnerId: adminUserId,
+    });
+
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest2.id,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminUserId,
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest2.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+
+    // Create a test document
+    const docResult2 = await adminSql`
+      INSERT INTO public.documents (
+        organization_id, dossier_id, document_type, version, storage_path, hash, size, format, state, uploaded_by_type
+      ) VALUES (
+        ${orgId}::uuid, ${dossierTest2.id}::uuid, 'doc_rut', 1, 'path/to/doc2', 'fakehash456', 1024, 'pdf', 'received', 'counterparty'
+      ) RETURNING id
+    `;
+    const docId2 = docResult2[0].id;
+
+    const [dossierData2] = await adminSql`
+      SELECT party_id, configuration_version_id FROM public.dossiers WHERE id = ${dossierTest2.id}::uuid
+    `;
+
+    // First declare a value
+    await saveDeclaredFields({
+      organizationId: orgId,
+      dossierId: dossierTest2.id,
+      fields: {
+        razon_social: 'Exact Company Name',
+      },
+    });
+
+    // Register an extracted assertion with the exact same value
+    await registerAssertion(
+      {
+        organizationId: orgId,
+        dossierId: dossierTest2.id,
+        partyId: dossierData2.party_id,
+        configurationVersionId: dossierData2.configuration_version_id,
+        field: 'razon_social',
+        value: 'Exact Company Name',
+        origin: 'extracted',
+        confidence: '0.99',
+        evidenceId: docId2,
+        producedBy: analystUserId,
+      },
+    );
+
+    // Get the form and check that suggestion is NOT present (values are equal)
+    const form = await getDeclarationForm(orgId, dossierTest2.id);
+    expect(form.values['razon_social']).toBe('Exact Company Name');
+    expect(form.suggestions['razon_social']).toBeUndefined();
+  });
+
+  it('Sugerencias: Campo con declared y extracted distintos aparece en suggestions', async () => {
+    // Create another fresh dossier
+    const dossierTest3 = await createDossierRequest({
+      organizationId: orgId,
+      requestedBy: adminUserId,
+      counterpartyTypeName: 'proveedor_custom',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '777777777',
+        declaredName: 'Test Company Conflict',
+      },
+      internalOwnerId: adminUserId,
+    });
+
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest3.id,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminUserId,
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest3.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+
+    // Create a test document
+    const docResult3 = await adminSql`
+      INSERT INTO public.documents (
+        organization_id, dossier_id, document_type, version, storage_path, hash, size, format, state, uploaded_by_type
+      ) VALUES (
+        ${orgId}::uuid, ${dossierTest3.id}::uuid, 'doc_rut', 1, 'path/to/doc3', 'fakehash789', 1024, 'pdf', 'received', 'counterparty'
+      ) RETURNING id
+    `;
+    const docId3 = docResult3[0].id;
+
+    const [dossierData3] = await adminSql`
+      SELECT party_id, configuration_version_id FROM public.dossiers WHERE id = ${dossierTest3.id}::uuid
+    `;
+
+    // Declare one value
+    await saveDeclaredFields({
+      organizationId: orgId,
+      dossierId: dossierTest3.id,
+      fields: {
+        razon_social: 'Company Declared Value',
+      },
+    });
+
+    // Register extracted assertion with different value
+    await registerAssertion(
+      {
+        organizationId: orgId,
+        dossierId: dossierTest3.id,
+        partyId: dossierData3.party_id,
+        configurationVersionId: dossierData3.configuration_version_id,
+        field: 'razon_social',
+        value: 'Company Extracted Value',
+        origin: 'extracted',
+        confidence: '0.85',
+        evidenceId: docId3,
+        producedBy: analystUserId,
+      },
+    );
+
+    // Get the form and verify suggestion appears because values differ
+    const form = await getDeclarationForm(orgId, dossierTest3.id);
+    expect(form.values['razon_social']).toBe('Company Declared Value');
+    expect(form.suggestions['razon_social']).toBeDefined();
+    expect(form.suggestions['razon_social'].value).toBe('Company Extracted Value');
+  });
+
+  it('Sugerencias: Sin afirmación extracted, suggestions es vacío sin romper form', async () => {
+    // Create another fresh dossier
+    const dossierTest4 = await createDossierRequest({
+      organizationId: orgId,
+      requestedBy: adminUserId,
+      counterpartyTypeName: 'proveedor_custom',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '666666666',
+        declaredName: 'Test Company No Extraction',
+      },
+      internalOwnerId: adminUserId,
+    });
+
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest4.id,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminUserId,
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest4.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+
+    // Don't register any extracted assertions, just get the form
+    const form = await getDeclarationForm(orgId, dossierTest4.id);
+    expect(form.suggestions).toEqual({});
+    expect(form.fieldRequirements.length).toBeGreaterThan(0);
+    expect(form.documentRequirements.length).toBeGreaterThan(0);
+  });
+
+  it('Sugerencias: Extracción real de IA (con aiExecutionId, sin producedBy) también genera suggestions', async () => {
+    // Create another fresh dossier for this test
+    const dossierTest5 = await createDossierRequest({
+      organizationId: orgId,
+      requestedBy: adminUserId,
+      counterpartyTypeName: 'proveedor_custom',
+      party: {
+        identificationType: 'NIT',
+        identificationNumber: '555555555',
+        declaredName: 'Test Company Real AI Extraction',
+      },
+      internalOwnerId: adminUserId,
+    });
+
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest5.id,
+      toState: 'enviada',
+      actorType: 'user',
+      actorId: adminUserId,
+    });
+    await executeTransition({
+      organizationId: orgId,
+      dossierId: dossierTest5.id,
+      toState: 'en_diligenciamiento',
+      actorType: 'counterparty',
+    });
+
+    // Create a test document
+    const docResult5 = await adminSql`
+      INSERT INTO public.documents (
+        organization_id, dossier_id, document_type, version, storage_path, hash, size, format, state, uploaded_by_type
+      ) VALUES (
+        ${orgId}::uuid, ${dossierTest5.id}::uuid, 'doc_rut', 1, 'path/to/doc5', 'fakehash555', 1024, 'pdf', 'received', 'counterparty'
+      ) RETURNING id
+    `;
+    const docId5 = docResult5[0].id;
+
+    const [dossierData5] = await adminSql`
+      SELECT party_id, configuration_version_id FROM public.dossiers WHERE id = ${dossierTest5.id}::uuid
+    `;
+
+    // Record a real AI execution (succeeded status, with confidence)
+    const aiExec = await recordAiExecution({
+      organizationId: orgId,
+      dossierId: dossierTest5.id,
+      documentId: docId5,
+      provider: 'anthropic',
+      model: 'claude-3-5-sonnet',
+      modelVersion: '1.0',
+      instructionTemplateId: 'template-1',
+      instructionTemplateVersion: '1.0',
+      dataDestination: 'US',
+      sentFragmentHash: 'hash123456',
+      status: 'succeeded',
+      result: { razon_social: 'AI-Extracted Company Inc.' },
+      confidence: '0.92',
+    });
+
+    // Register extracted assertion with the real AI execution (no producedBy = genuine AI extraction)
+    await registerAssertion({
+      organizationId: orgId,
+      dossierId: dossierTest5.id,
+      partyId: dossierData5.party_id,
+      configurationVersionId: dossierData5.configuration_version_id,
+      field: 'razon_social',
+      value: 'AI-Extracted Company Inc.',
+      origin: 'extracted',
+      confidence: '0.92',
+      evidenceId: docId5,
+      aiExecutionId: aiExec.id,
+      // no producedBy — this is a genuine AI extraction, will be pending_validation
+    });
+
+    // Get the form and verify suggestion appears
+    const form = await getDeclarationForm(orgId, dossierTest5.id);
+    expect(form.values['razon_social']).toBeUndefined();
+    expect(form.suggestions['razon_social']).toBeDefined();
+    expect(form.suggestions['razon_social'].value).toBe('AI-Extracted Company Inc.');
+    expect(form.suggestions['razon_social'].confidence).toBe('0.92');
+
+    // Verify the assertion is pending_validation (not yet validated)
+    const assertions5 = await adminSql`
+      SELECT status FROM public.assertions
+      WHERE organization_id = ${orgId}::uuid AND dossier_id = ${dossierTest5.id}::uuid AND field = 'razon_social'
+    `;
+    expect(assertions5[0].status).toBe('pending_validation');
   });
 });

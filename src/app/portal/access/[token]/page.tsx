@@ -245,6 +245,7 @@ export default async function PortalAccessPage({
           fieldRequirements={formData.fieldRequirements}
           documentRequirements={formData.documentRequirements}
           values={formData.values}
+          suggestions={formData.suggestions}
           correctionsReason={correctionsReason}
         />
         <DocumentUploadSection

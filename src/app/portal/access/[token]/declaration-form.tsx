@@ -33,6 +33,13 @@ import {
   Clock,
 } from 'lucide-react';
 
+interface FieldSuggestion {
+  value: unknown;
+  assertionId: string;
+  evidenceId: string | null;
+  confidence: string | null;
+}
+
 interface DeclarationFormProps {
   token: string;
   dossierId: string;
@@ -40,6 +47,7 @@ interface DeclarationFormProps {
   fieldRequirements: RequirementDetail[];
   documentRequirements?: RequirementDetail[];
   values: Record<string, unknown>;
+  suggestions?: Record<string, FieldSuggestion>;
   correctionsReason?: string | null;
 }
 
@@ -49,12 +57,34 @@ export function DeclarationForm({
   organizationId,
   fieldRequirements,
   values: initialValues,
+  suggestions: initialSuggestions = {},
   correctionsReason,
 }: DeclarationFormProps) {
-  const [formValues, setFormValues] = React.useState<Record<string, unknown>>(() => ({
-    ...initialValues,
-  }));
-  const [dirtyKeys, setDirtyKeys] = React.useState<Set<string>>(new Set());
+  const [formValues, setFormValues] = React.useState<Record<string, unknown>>(() => {
+    const initial = { ...initialValues };
+    // Seed formValues with suggestions for fields without declared values
+    for (const [field, suggestion] of Object.entries(initialSuggestions)) {
+      if (!(field in initial)) {
+        initial[field] = suggestion.value;
+      }
+    }
+    return initial;
+  });
+  const [dirtyKeys, setDirtyKeys] = React.useState<Set<string>>(() => {
+    // Fields with suggestions but no declared values should be marked dirty from the start
+    // so they get saved when the user saves progress
+    const initial = new Set<string>();
+    for (const field of Object.keys(initialSuggestions)) {
+      if (!(field in initialValues)) {
+        initial.add(field);
+      }
+    }
+    return initial;
+  });
+  const [suggestedKeys, setSuggestedKeys] = React.useState<Set<string>>(
+    new Set(Object.keys(initialSuggestions)),
+  );
+  const [hiddenConflicts, setHiddenConflicts] = React.useState<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
   const [missingFieldKeys, setMissingFieldKeys] = React.useState<Set<string>>(new Set());
 
@@ -68,6 +98,15 @@ export function DeclarationForm({
   const handleValueChange = (key: string, value: unknown) => {
     setFormValues((prev) => ({ ...prev, [key]: value }));
     setDirtyKeys((prev) => new Set(prev).add(key));
+
+    // Remove from suggestedKeys when user edits (it's no longer an unreviewed suggestion)
+    if (suggestedKeys.has(key)) {
+      setSuggestedKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
 
     // Clear error on change if present
     if (fieldErrors[key]) {
@@ -342,6 +381,55 @@ export function DeclarationForm({
                     placeholder={`Ingrese ${labelText.toLowerCase()}`}
                   />
                 )}
+
+                {/* Suggestion badge for fields pre-filled from AI extraction */}
+                {suggestedKeys.has(req.key) && !(req.key in initialValues) && (
+                  <div className="flex items-center gap-1 text-[11px] text-sky-600 dark:text-sky-400 mt-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Sugerido por tu documento — verifica</span>
+                  </div>
+                )}
+
+                {/* Conflict warning for fields with both declared and extracted values */}
+                {initialSuggestions[req.key] &&
+                  req.key in initialValues &&
+                  !hiddenConflicts.has(req.key) && (
+                    <div className="p-2.5 mt-2 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-800 dark:text-amber-300 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold">
+                            Tu documento dice: &quot;{String(initialSuggestions[req.key].value)}&quot; — tú
+                            declaraste &quot;{String(currentVal)}&quot;.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setHiddenConflicts((prev) => new Set(prev).add(req.key));
+                          }}
+                        >
+                          Mantener lo que declaré
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                          onClick={() => {
+                            handleValueChange(req.key, initialSuggestions[req.key].value);
+                            setHiddenConflicts((prev) => new Set(prev).add(req.key));
+                          }}
+                        >
+                          Usar el valor del documento
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                 {/* Validation or missing field alert */}
                 {isMissing && (

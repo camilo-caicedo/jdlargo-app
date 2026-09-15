@@ -9,6 +9,7 @@ import {
   confirmDocumentUpload,
   getPortalDocumentDownloadUrl,
 } from '@/server/documents/document';
+import { runDocumentExtraction } from '@/server/extraction/service';
 
 export async function requestDocumentUploadUrlAction(
   token: string,
@@ -73,7 +74,7 @@ export async function confirmDocumentUploadAction(
     const validated = await readAndValidateUploadedFile(storagePath, organizationId);
 
     // 2. Confirmar en base de datos con sistema privilegiado
-    await executePrivilegedSystemOperation(
+    const uploadResult = await executePrivilegedSystemOperation(
       {
         action: 'portal.confirm_document_upload',
         organizationId,
@@ -87,7 +88,7 @@ export async function confirmDocumentUploadAction(
         description: 'Confirm counterparty document upload via portal access',
       },
       async (tx) => {
-        await confirmDocumentUpload(
+        return await confirmDocumentUpload(
           {
             organizationId,
             dossierId,
@@ -105,6 +106,19 @@ export async function confirmDocumentUploadAction(
         );
       },
     );
+
+    // 3. Fire non-blocking extraction if this is a new document (not deduplicated)
+    if (!uploadResult.deduplicated) {
+      try {
+        await runDocumentExtraction({
+          organizationId,
+          dossierId,
+          documentId: uploadResult.id,
+        });
+      } catch (err) {
+        console.warn('[confirmDocumentUploadAction] Extracción falló, no bloquea la subida:', err);
+      }
+    }
 
     revalidatePath(`/portal/access/${token}`);
     return { success: true };
