@@ -18,9 +18,10 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { DOSSIER_DOCUMENTS_BUCKET, EXTRACTION_CONFIDENCE_THRESHOLD } from '@/lib/document-upload-constants';
 import { confirmDocumentUpload } from '../documents/document';
 import { registerAssertion, getAssertionsForField } from '../assertions/service';
-import { runDocumentExtraction } from './service';
+import { runDocumentExtraction, runExtractionForPendingDocuments } from './service';
 import { type ExtractionEngine, type ExtractionEngineInput, type ExtractionEngineResult } from './port';
 import type { Organization } from '../organizations/types';
+import { recordAiExecution } from '../ai/execution';
 
 const directUrl = process.env.DIRECT_URL;
 const adminSql = postgres(directUrl || '');
@@ -170,6 +171,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
   let dossierBetaId: string;
   let documentAlfaId: string;
   let documentBetaId: string;
+  let counterpartyTypeAlfa: string;
   const createdStoragePaths: string[] = [];
 
   beforeAll(async () => {
@@ -188,13 +190,14 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
     const cpTypeAlfa = await addCounterpartyType({
       organizationId: orgAlfa.id,
       configurationVersionId: draftAlfa.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
+    counterpartyTypeAlfa = cpTypeAlfa.id;
     await addRequirement({
       organizationId: orgAlfa.id,
       configurationVersionId: draftAlfa.versionId,
-      counterpartyTypeId: cpTypeAlfa.id,
+      counterpartyTypeId: counterpartyTypeAlfa,
       standard: 'SARLAFT',
       type: 'field',
       key: 'nit',
@@ -204,7 +207,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
     await addRequirement({
       organizationId: orgAlfa.id,
       configurationVersionId: draftAlfa.versionId,
-      counterpartyTypeId: cpTypeAlfa.id,
+      counterpartyTypeId: counterpartyTypeAlfa,
       standard: 'SARLAFT',
       type: 'field',
       key: 'razon_social',
@@ -214,7 +217,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
     await addRequirement({
       organizationId: orgAlfa.id,
       configurationVersionId: draftAlfa.versionId,
-      counterpartyTypeId: cpTypeAlfa.id,
+      counterpartyTypeId: counterpartyTypeAlfa,
       standard: 'SARLAFT',
       type: 'field',
       key: 'representante_legal',
@@ -224,7 +227,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
     await addRequirement({
       organizationId: orgAlfa.id,
       configurationVersionId: draftAlfa.versionId,
-      counterpartyTypeId: cpTypeAlfa.id,
+      counterpartyTypeId: counterpartyTypeAlfa,
       standard: 'SARLAFT',
       type: 'document_type',
       key: 'doc_rut',
@@ -242,7 +245,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
     const cpTypeBeta = await addCounterpartyType({
       organizationId: orgBeta.id,
       configurationVersionId: draftBeta.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -275,7 +278,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
     const dossierAlfa = await createDossierRequest({
       organizationId: orgAlfa.id,
       requestedBy: adminAlfaId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900123456-1',
@@ -327,7 +330,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
     const dossierBeta = await createDossierRequest({
       organizationId: orgBeta.id,
       requestedBy: adminBetaId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '800654321-9',
@@ -800,5 +803,149 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
       SELECT id FROM public.ai_executions WHERE organization_id = ${orgAlfa.id}::uuid AND document_id = ${unsupportedDoc.id}::uuid
     `;
     expect(aiExec).toBeUndefined();
+  });
+
+
+  describe('runExtractionForPendingDocuments', () => {
+    it('Escenario: procesa varios documentos pendientes y resume correctamente', async () => {
+      const mockEngine = new MockExtractionEngine({
+        status: 'succeeded',
+        provider: 'test', model: 'test-v1', modelVersion: '1',
+        instructionTemplateId: 't', instructionTemplateVersion: '1', dataDestination: 'a',
+        fields: [{ field: 'nit', value: '900000000-1', confidence: 0.9 }],
+      });
+
+      const freshDossier = await createDossierRequest({
+        organizationId: orgAlfa.id,
+        requestedBy: adminAlfaId,
+        counterpartyTypeName: 'proveedor_custom',
+        party: { identificationType: 'NIT', identificationNumber: '900111000-1', declaredName: 'Pending Docs Co' },
+        internalOwnerId: adminAlfaId,
+      });
+
+      const adminStorage = createSupabaseAdminClient();
+      const fileBuffer1 = Buffer.from('test pdf 1');
+      const storagePath1 = `${freshDossier.id}/pending1.pdf`;
+      createdStoragePaths.push(storagePath1);
+      await adminStorage.storage.from(DOSSIER_DOCUMENTS_BUCKET).upload(storagePath1, fileBuffer1, { upsert: true });
+
+      const fileBuffer2 = Buffer.from('test pdf 2');
+      const storagePath2 = `${freshDossier.id}/pending2.pdf`;
+      createdStoragePaths.push(storagePath2);
+      await adminStorage.storage.from(DOSSIER_DOCUMENTS_BUCKET).upload(storagePath2, fileBuffer2, { upsert: true });
+
+      const doc1 = await adminSql`
+        INSERT INTO public.documents (organization_id, dossier_id, document_type, version, storage_path, hash, size, format, state, uploaded_by_type)
+        VALUES (${orgAlfa.id}::uuid, ${freshDossier.id}::uuid, 'doc_rut', 1, ${storagePath1}, 'hash_pending_1', ${fileBuffer1.length}, 'pdf', 'received', 'counterparty')
+        RETURNING id
+      `;
+      const doc2 = await adminSql`
+        INSERT INTO public.documents (organization_id, dossier_id, document_type, version, storage_path, hash, size, format, state, uploaded_by_type)
+        VALUES (${orgAlfa.id}::uuid, ${freshDossier.id}::uuid, 'doc_camara_comercio', 1, ${storagePath2}, 'hash_pending_2', ${fileBuffer2.length}, 'pdf', 'received', 'counterparty')
+        RETURNING id
+      `;
+
+      const result = await runExtractionForPendingDocuments(orgAlfa.id, freshDossier.id, undefined, mockEngine);
+
+      expect(mockEngine.callCount).toBe(2);
+      expect(result.processed).toBe(2);
+      expect(result.succeeded).toBe(2);
+      expect(result.failed).toBe(0);
+      expect(result.results.some((r) => r.documentId === doc1[0].id && r.status === 'succeeded')).toBe(true);
+      expect(result.results.some((r) => r.documentId === doc2[0].id && r.status === 'succeeded')).toBe(true);
+    });
+
+    it('Escenario: dossier sin documentos pendientes retorna processed 0', async () => {
+      const emptyDossier = await createDossierRequest({
+        organizationId: orgAlfa.id,
+        requestedBy: adminAlfaId,
+        counterpartyTypeName: 'proveedor_custom',
+        party: { identificationType: 'NIT', identificationNumber: '900111000-2', declaredName: 'Empty Docs Co' },
+        internalOwnerId: adminAlfaId,
+      });
+
+      const result = await runExtractionForPendingDocuments(orgAlfa.id, emptyDossier.id);
+
+      expect(result).toEqual({ processed: 0, succeeded: 0, failed: 0, results: [] });
+    });
+
+    it('Escenario: excluye documentos con tipo no soportado por IA', async () => {
+      const mockEngine = new MockExtractionEngine({ status: 'succeeded', provider: 'test', model: 'test', modelVersion: '1', instructionTemplateId: 't', instructionTemplateVersion: '1', dataDestination: 'a', fields: [] });
+
+      const typeDossier = await createDossierRequest({
+        organizationId: orgAlfa.id,
+        requestedBy: adminAlfaId,
+        counterpartyTypeName: 'proveedor_custom',
+        party: { identificationType: 'NIT', identificationNumber: '900111000-3', declaredName: 'Unsupported Type Co' },
+        internalOwnerId: adminAlfaId,
+      });
+
+      const unsupportedDoc = await adminSql`
+        INSERT INTO public.documents (organization_id, dossier_id, document_type, version, storage_path, hash, size, format, state, uploaded_by_type)
+        VALUES (${orgAlfa.id}::uuid, ${typeDossier.id}::uuid, 'doc_no_catalogado', 1, '/t/unsupported', 'hash_unsupported_1', 1000, 'pdf', 'received', 'counterparty')
+        RETURNING id
+      `;
+
+      const result = await runExtractionForPendingDocuments(orgAlfa.id, typeDossier.id, undefined, mockEngine);
+
+      expect(mockEngine.callCount).toBe(0);
+      expect(result.processed).toBe(0);
+      expect(result.results.some((r) => r.documentId === unsupportedDoc[0].id)).toBe(false);
+    });
+
+    it('Escenario: excluye documentos que ya tienen una ejecución de IA registrada', async () => {
+      const mockEngine = new MockExtractionEngine({ status: 'succeeded', provider: 'test', model: 'test', modelVersion: '1', instructionTemplateId: 't', instructionTemplateVersion: '1', dataDestination: 'a', fields: [] });
+
+      const alreadyDossier = await createDossierRequest({
+        organizationId: orgAlfa.id,
+        requestedBy: adminAlfaId,
+        counterpartyTypeName: 'proveedor_custom',
+        party: { identificationType: 'NIT', identificationNumber: '900111000-4', declaredName: 'Already Processed Co' },
+        internalOwnerId: adminAlfaId,
+      });
+
+      const processedDoc = await adminSql`
+        INSERT INTO public.documents (organization_id, dossier_id, document_type, version, storage_path, hash, size, format, state, uploaded_by_type)
+        VALUES (${orgAlfa.id}::uuid, ${alreadyDossier.id}::uuid, 'doc_rut', 1, '/t/already', 'hash_already_1', 1000, 'pdf', 'received', 'counterparty')
+        RETURNING id
+      `;
+      await recordAiExecution({
+        organizationId: orgAlfa.id,
+        dossierId: alreadyDossier.id,
+        documentId: processedDoc[0].id,
+        provider: 'google', model: 'gemini', modelVersion: '1', instructionTemplateId: 't', instructionTemplateVersion: '1',
+        dataDestination: 'a', sentFragmentHash: 'already-hash', status: 'succeeded', result: {}, confidence: '0.9',
+      });
+
+      const result = await runExtractionForPendingDocuments(orgAlfa.id, alreadyDossier.id, undefined, mockEngine);
+
+      expect(mockEngine.callCount).toBe(0);
+      expect(result.processed).toBe(0);
+      expect(result.results.some((r) => r.documentId === processedDoc[0].id)).toBe(false);
+    });
+
+    it('Escenario: aislamiento entre organizaciones', async () => {
+      const alfaOnlyDossier = await createDossierRequest({
+        organizationId: orgAlfa.id,
+        requestedBy: adminAlfaId,
+        counterpartyTypeName: 'proveedor_custom',
+        party: { identificationType: 'NIT', identificationNumber: '900111000-5', declaredName: 'Isolation Test Co' },
+        internalOwnerId: adminAlfaId,
+      });
+
+      await adminSql`
+        INSERT INTO public.documents (organization_id, dossier_id, document_type, version, storage_path, hash, size, format, state, uploaded_by_type)
+        VALUES (${orgAlfa.id}::uuid, ${alfaOnlyDossier.id}::uuid, 'doc_rut', 1, '/t/isolation', 'hash_isolation_1', 1000, 'pdf', 'received', 'counterparty')
+      `;
+
+      // Usuario de Beta, con contexto de tenant de Beta, intenta correr extracción sobre el dossier de Alfa
+      const resultFromBetaContext = await withTenantContext(
+        { userId: adminBetaId, organizationId: orgBeta.id },
+        async (tx) => runExtractionForPendingDocuments(orgAlfa.id, alfaOnlyDossier.id, tx),
+      );
+
+      // RLS debe impedir que el contexto de Beta vea el documento de Alfa
+      expect(resultFromBetaContext.processed).toBe(0);
+    });
   });
 });

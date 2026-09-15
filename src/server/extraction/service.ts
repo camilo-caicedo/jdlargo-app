@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { db, DrizzleClient } from '../db/client';
-import { documents, dossiers } from '../db/schema';
+import { documents, dossiers, aiExecutions } from '../db/schema';
 import { fetchDocumentFragment } from './document-fragment';
 import { defaultMultimodalEngine } from './multimodal-engine';
 import { type ExtractionEngine } from './port';
@@ -188,5 +188,86 @@ export async function runDocumentExtraction(
     aiExecutionId: execution.id,
     status: 'failed',
     assertionsCreated: 0,
+  };
+}
+
+export interface RunExtractionForPendingDocumentsResult {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  results: Array<{ documentId: string; status: RunDocumentExtractionResult['status'] }>;
+}
+
+export async function runExtractionForPendingDocuments(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+  engine?: ExtractionEngine,
+): Promise<RunExtractionForPendingDocumentsResult> {
+  const client = txClient || db;
+
+  // Load all documents in 'received' state
+  const allDocs = await client
+    .select()
+    .from(documents)
+    .where(
+      and(
+        eq(documents.organizationId, organizationId),
+        eq(documents.dossierId, dossierId),
+        eq(documents.state, 'received'),
+      ),
+    );
+
+  // Load all ai_executions for this dossier
+  const allExecutions = await client
+    .select({ documentId: aiExecutions.documentId })
+    .from(aiExecutions)
+    .where(
+      and(
+        eq(aiExecutions.organizationId, organizationId),
+        eq(aiExecutions.dossierId, dossierId),
+      ),
+    );
+
+  const processedDocumentIds = new Set(
+    allExecutions.map((e) => e.documentId).filter((id) => id !== null),
+  );
+
+  // Filter pending documents: received + supported type + no prior execution
+  const pendingDocs = allDocs.filter(
+    (doc) =>
+      isDocumentTypeSupported(doc.documentType) && !processedDocumentIds.has(doc.id),
+  );
+
+  // Process each pending document sequentially
+  const results: RunExtractionForPendingDocumentsResult['results'] = [];
+  let succeeded = 0;
+  let failed = 0;
+
+  for (const doc of pendingDocs) {
+    const result = await runDocumentExtraction(
+      {
+        organizationId,
+        dossierId,
+        documentId: doc.id,
+        engine,
+      },
+      client,
+    );
+
+    results.push({ documentId: doc.id, status: result.status });
+
+    if (result.status === 'succeeded') {
+      succeeded++;
+    } else if (result.status === 'failed') {
+      failed++;
+    }
+  }
+
+  return {
+    processed: pendingDocs.length,
+    succeeded,
+    failed,
+    results,
   };
 }

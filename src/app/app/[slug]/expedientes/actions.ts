@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requireAuthenticatedUserId } from '@/server/auth/session';
+import { checkUserPermission } from '@/server/auth/access-control';
 import { createDossierRequest, updateDossierAdministrativeData } from '@/server/dossiers/dossier';
 import { issueAccessLink, revokeAccessLink } from '@/server/dossiers/access';
 import {
@@ -17,6 +18,7 @@ import {
 } from '@/server/dossiers/review';
 import { recordDecision, type EvidenceRef } from '@/server/dossiers/decision';
 import { executeTransition } from '@/server/dossiers/state-machine';
+import { runExtractionForPendingDocuments } from '@/server/extraction/service';
 
 const createDossierSchema = z.object({
   counterpartyTypeName: z.string().min(1, 'Seleccione un tipo de contraparte'),
@@ -455,6 +457,43 @@ export async function revokeAccessLinkAction(
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Error al revocar el enlace',
+    };
+  }
+}
+
+export async function runExtractionForPendingDocumentsAction(
+  organizationId: string,
+  dossierId: string,
+  slug: string,
+): Promise<{ success?: boolean; summary?: string; error?: string }> {
+  const userId = await requireAuthenticatedUserId();
+
+  const perm = await checkUserPermission(userId, organizationId, 'document:review');
+  if (!perm.granted) {
+    return {
+      error: perm.reason || 'No tiene permiso para revisar documentos y ejecutar extracción.',
+    };
+  }
+
+  try {
+    const result = await runExtractionForPendingDocuments(organizationId, dossierId);
+
+    const parts = [`${result.processed} documento(s) procesado(s)`];
+    if (result.succeeded > 0) {
+      parts.push(`${result.succeeded} con datos extraído(s)`);
+    }
+    if (result.failed > 0) {
+      parts.push(`${result.failed} requiere(n) revisión manual`);
+    }
+
+    const summary = parts.join(', ');
+
+    revalidatePath(`/app/${slug}/expedientes/${dossierId}`);
+    return { success: true, summary };
+  } catch (err: unknown) {
+    console.error('[runExtractionForPendingDocumentsAction] Error:', err);
+    return {
+      error: err instanceof Error ? err.message : 'Error al ejecutar extracción de documentos',
     };
   }
 }

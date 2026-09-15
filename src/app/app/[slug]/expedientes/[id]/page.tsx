@@ -20,6 +20,7 @@ import { DocumentsCard } from './documents-card';
 import { ReviewActionsBox } from './review-actions-box';
 import { DecisionBox } from './decision-box';
 import { ReconciliationBox } from './reconciliation-box';
+import { ExtractionBox } from './extraction-box';
 
 function getHumanState(state: string) {
   switch (state) {
@@ -429,6 +430,10 @@ export default async function DossierDetailPage({
           {/* Reconciliation & Validation (HU-019, HU-020) */}
           {canReviewDossier && (
             <ReconciliationBox organizationId={organizationId} slug={slug} dossierId={id} userId={userId} />
+          )}
+
+          {canReviewDocuments && (
+            <ExtractionBox organizationId={organizationId} slug={slug} dossierId={id} />
           )}
 
           {/* Documents Card (HU-013, HU-014) */}
