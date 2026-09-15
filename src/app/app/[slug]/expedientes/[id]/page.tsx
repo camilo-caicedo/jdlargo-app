@@ -19,6 +19,7 @@ import { EditDossierBox } from './edit-dossier-box';
 import { DocumentsCard } from './documents-card';
 import { ReviewActionsBox } from './review-actions-box';
 import { DecisionBox } from './decision-box';
+import { DecisionHistoryBanner } from './decision-history-banner';
 import { ReconciliationBox } from './reconciliation-box';
 import { ExtractionBox } from './extraction-box';
 
@@ -220,8 +221,8 @@ export default async function DossierDetailPage({
   return (
     <div className="max-w-full mx-auto space-y-6">
       {/* Back button & Breadcrumb */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2 text-xs text-zinc-500 pt-1.5">
           <Link href={`/app/${slug}/expedientes`} className="hover:underline inline-flex items-center gap-1">
             <ArrowLeft className="w-3 h-3" />
             Volver al listado
@@ -230,7 +231,7 @@ export default async function DossierDetailPage({
           <span className="font-mono font-medium text-zinc-900 dark:text-zinc-100">{dossier.code}</span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <ReviewActionsBox
             organizationId={organizationId}
             dossierId={dossier.id}
@@ -245,7 +246,6 @@ export default async function DossierDetailPage({
             canDecide={canApproveDossier}
             canClose={canEditDossier}
             availableEvidence={availableEvidence}
-            decisionsHistory={decisionsHistory}
             exceptionWarning={exceptionWarning}
           />
           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${stateBadge.color}`}>
@@ -253,6 +253,8 @@ export default async function DossierDetailPage({
           </span>
         </div>
       </div>
+
+      <DecisionHistoryBanner decisionsHistory={decisionsHistory} />
 
       {/* Main summary header */}
       <div className="p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs space-y-4">

@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -12,13 +11,12 @@ import {
   Loader2,
   AlertCircle,
   X,
-  FileCheck2,
   ShieldCheck,
   Plus,
   Trash2,
 } from 'lucide-react';
 import { recordDecisionAction, closeDossierAction } from '../actions';
-import type { EvidenceRef, DecisionRecord } from '@/server/dossiers/decision';
+import type { EvidenceRef } from '@/server/dossiers/decision';
 
 interface EvidenceItemOption {
   kind: 'assertion' | 'document';
@@ -39,7 +37,6 @@ interface DecisionBoxProps {
   canDecide: boolean;
   canClose: boolean;
   availableEvidence: EvidenceItemOption[];
-  decisionsHistory: DecisionRecord[];
   exceptionWarning?: ExceptionWarning | null;
 }
 
@@ -56,7 +53,6 @@ export function DecisionBox({
   canDecide,
   canClose,
   availableEvidence,
-  decisionsHistory,
   exceptionWarning,
 }: DecisionBoxProps) {
   // Decision Form State
@@ -478,84 +474,6 @@ export function DecisionBox({
         </div>
       )}
 
-      {/* Decisions History Card */}
-      {decisionsHistory.length > 0 && (
-        <Card className="shadow-xs border-emerald-100 dark:border-emerald-950/60 bg-emerald-50/20 dark:bg-emerald-950/10">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-1.5 text-emerald-950 dark:text-emerald-200">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              Decisiones registradas ({decisionsHistory.length})
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Historial formal de decisiones del Oficial de Cumplimiento.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ul className="divide-y divide-emerald-100/60 dark:divide-emerald-900/30 text-xs">
-              {decisionsHistory.map((d, index) => {
-                const isLatest = index === decisionsHistory.length - 1;
-                return (
-                  <li key={d.id} className="p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2 py-0.5 rounded font-semibold text-[11px] uppercase ${
-                            d.type === 'approve'
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
-                              : d.type === 'approve_with_conditions'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
-                              : 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200'
-                          }`}
-                        >
-                          {d.type === 'approve'
-                            ? 'Aprobada'
-                            : d.type === 'approve_with_conditions'
-                            ? 'Aprobada con condiciones'
-                            : 'Rechazada'}
-                        </span>
-                        {isLatest && (
-                          <span className="text-[10px] bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded font-mono text-zinc-700 dark:text-zinc-300">
-                            Vigente
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-zinc-400 text-[11px]">
-                        {new Date(d.madeAt).toLocaleDateString()} {new Date(d.madeAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-
-                    <div className="text-[11px] text-zinc-500 flex items-center justify-between">
-                      <span>Decisor: <strong className="text-zinc-700 dark:text-zinc-300">{d.title}</strong></span>
-                      <span>Vigente hasta: {new Date(d.validUntil).toLocaleDateString()}</span>
-                    </div>
-
-                    <div className="p-2.5 rounded bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800">
-                      <span className="font-semibold text-zinc-700 dark:text-zinc-300 block mb-0.5">Fundamento:</span>
-                      <p className="text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap">{d.rationale}</p>
-                    </div>
-
-                    {d.conditions && d.conditions.length > 0 && (
-                      <div className="p-2.5 rounded bg-amber-50/60 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/50">
-                        <span className="font-semibold text-amber-900 dark:text-amber-300 block mb-1">Condiciones:</span>
-                        <ul className="list-disc list-inside space-y-0.5 text-amber-800 dark:text-amber-400">
-                          {d.conditions.map((c, i) => (
-                            <li key={i}>{c}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    <div className="text-[11px] text-zinc-400 flex items-center gap-1">
-                      <FileCheck2 className="w-3.5 h-3.5" />
-                      <span>{d.evidence.length} elemento(s) de evidencia citados</span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
