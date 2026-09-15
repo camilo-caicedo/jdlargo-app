@@ -52,7 +52,7 @@ export function PrivacyNoticeForm({
   };
 
   return (
-    <Card className="w-full max-w-2xl mx-auto shadow-sm">
+    <Card className="w-full max-w-4xl mx-auto shadow-sm">
       <CardHeader>
         <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 mb-1">
           <ShieldCheck className="w-5 h-5" />

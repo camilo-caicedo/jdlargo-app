@@ -64,9 +64,13 @@ Superficie pública y de una sola tarea (HU-010, HU-011, HU-012, HU-013). Se acc
 enlaces de invitación (casi siempre desde dispositivos móviles), sin usuario autenticado en
 Supabase Auth.
 
-- **Layout:** una sola tarjeta centrada (max-w ~440px), fondo neutro, sin barra lateral,
-  sin navegación ni migas de pan que sugieran "estás dentro de una aplicación". Sensación de
-  página de verificación segura de un solo propósito.
+- **Layout:** una sola tarjeta centrada, fondo neutro, sin barra lateral, sin navegación ni
+  migas de pan que sugieran "estás dentro de una aplicación". Sensación de página de
+  verificación segura de un solo propósito. Ancho según el contenido: una tarea de un solo
+  campo (OTP, confirmar/rechazar) usa una tarjeta angosta (`max-w-md`/`max-w-xl`); una
+  pantalla con contenido largo para leer (aviso de privacidad y sus finalidades) usa el
+  ancho completo del `<main>` del portal (`max-w-4xl`, ver `src/app/portal/layout.tsx`) —
+  no la angosta por defecto, que en desktop deja el texto apretado sin necesidad.
 - **Interacción y accesibilidad:** botones primarios con relleno sólido (nunca texto plano
   haciendo de botón). Estados `disabled` visibles con `cursor-not-allowed` y opacidad reducida.
   Anillo de foco visible en inputs y botones. Efectos hover sobrios en todos los elementos clickeables.
