@@ -4,15 +4,14 @@ import * as React from "react";
 import { useState, useTransition } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
-  ShieldCheck,
   Plus,
   Loader2,
   Check,
   Lock,
   Unlock,
 } from "lucide-react";
+import { toast } from "@/lib/toast";
 import { createDraftFromRolesAction, updateDraftRolesAction } from "./actions";
 import type { PermissionKey } from "@/server/auth/permissions";
 
@@ -49,8 +48,6 @@ export function RolesClient({
     initialRoles[0]?.code || "admin"
   );
   const [isPending, startTransition] = useTransition();
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const selectedRole = roles.find((r) => r.code === selectedRoleCode);
 
@@ -75,21 +72,17 @@ export function RolesClient({
   };
 
   const handleCreateDraft = () => {
-    setErrorMsg(null);
-    setSuccessMsg(null);
     startTransition(async () => {
       const res = await createDraftFromRolesAction(organizationId, slug);
       if (res.error) {
-        setErrorMsg(res.error);
+        toast.error(res.error);
       } else {
-        setSuccessMsg("Borrador creado exitosamente. Ahora puede modificar los roles.");
+        toast.success("Borrador creado exitosamente. Ahora puede modificar los roles.");
       }
     });
   };
 
   const handleSaveRoles = () => {
-    setErrorMsg(null);
-    setSuccessMsg(null);
     startTransition(async () => {
       const sanitized = roles.map((r) => ({
         code: r.code,
@@ -99,30 +92,15 @@ export function RolesClient({
       }));
       const res = await updateDraftRolesAction(organizationId, slug, sanitized);
       if (res.error) {
-        setErrorMsg(res.error);
+        toast.error(res.error);
       } else {
-        setSuccessMsg("Roles actualizados exitosamente en el borrador.");
+        toast.success("Roles actualizados exitosamente en el borrador.");
       }
     });
   };
 
   return (
     <div className="space-y-6">
-      {errorMsg && (
-        <Alert variant="destructive">
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{errorMsg}</AlertDescription>
-        </Alert>
-      )}
-
-      {successMsg && (
-        <Alert className="border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-100">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <AlertTitle>Operación exitosa</AlertTitle>
-          <AlertDescription>{successMsg}</AlertDescription>
-        </Alert>
-      )}
-
       {/* Draft banner or Create Draft button */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <div className="flex items-center gap-3">

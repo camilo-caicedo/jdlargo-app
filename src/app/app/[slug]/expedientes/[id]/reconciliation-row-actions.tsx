@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, XCircle, Pencil, GitCompare, Loader2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, XCircle, Pencil, GitCompare, Loader2 } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -85,12 +86,12 @@ export function ReconciliationRowActions({
 
   const handleConfirm = async () => {
     setConfirmPending(true);
-    setConfirmError(null);
     try {
       await confirmExtractedFieldAction(organizationId, slug, dossierId, extractedAssertionId!);
+      toast.success('Valor confirmado.');
       router.refresh();
     } catch (err) {
-      setConfirmError(err instanceof Error ? err.message : 'Error al confirmar');
+      toast.error(err instanceof Error ? err.message : 'Error al confirmar');
     } finally {
       setConfirmPending(false);
     }
@@ -99,9 +100,9 @@ export function ReconciliationRowActions({
   const handleDiscard = async () => {
     if (!discardReason.trim()) return;
     setDiscardPending(true);
-    setDiscardError(null);
     try {
       await discardExtractedFieldAction(organizationId, slug, dossierId, extractedAssertionId!, discardReason.trim());
+      toast.success('Valor descartado.');
       setDiscardOpen(false);
       setDiscardReason('');
       router.refresh();
@@ -115,7 +116,6 @@ export function ReconciliationRowActions({
   const handleCorrect = async () => {
     if (!correctValue.trim() || !correctReason.trim()) return;
     setCorrectPending(true);
-    setCorrectError(null);
     try {
       await correctExtractedFieldAction(
         organizationId,
@@ -128,6 +128,7 @@ export function ReconciliationRowActions({
         partyId,
         configurationVersionId,
       );
+      toast.success('Valor corregido.');
       setCorrectOpen(false);
       setCorrectValue('');
       setCorrectReason('');
@@ -142,9 +143,9 @@ export function ReconciliationRowActions({
   const handleResolve = async () => {
     if (!selectedAssertionId || !resolveReason.trim()) return;
     setResolvePending(true);
-    setResolveError(null);
     try {
       await resolveDiscrepancyAction(organizationId, slug, dossierId, field, selectedAssertionId, resolveReason.trim());
+      toast.success('Discrepancia resuelta.');
       setResolveOpen(false);
       setSelectedAssertionId(null);
       setResolveReason('');
@@ -221,12 +222,6 @@ export function ReconciliationRowActions({
                     className="min-h-24"
                   />
                 </div>
-                {resolveError && (
-                  <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    {resolveError}
-                  </p>
-                )}
               </div>
               <DialogFooter>
                 <Button variant="ghost" onClick={() => setResolveOpen(false)}>
@@ -295,12 +290,6 @@ export function ReconciliationRowActions({
                       className="min-h-24"
                     />
                   </div>
-                  {discardError && (
-                    <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      {discardError}
-                    </p>
-                  )}
                 </div>
                 <DialogFooter>
                   <Button variant="ghost" onClick={() => setDiscardOpen(false)}>
@@ -368,12 +357,6 @@ export function ReconciliationRowActions({
                       className="min-h-24"
                     />
                   </div>
-                  {correctError && (
-                    <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      {correctError}
-                    </p>
-                  )}
                 </div>
                 <DialogFooter>
                   <Button variant="ghost" onClick={() => setCorrectOpen(false)}>
@@ -392,13 +375,6 @@ export function ReconciliationRowActions({
           </>
         )}
       </div>
-
-      {confirmError && (
-        <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          {confirmError}
-        </p>
-      )}
     </div>
   );
 }

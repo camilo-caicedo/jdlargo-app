@@ -6,13 +6,21 @@ import { issueNewAccessLinkAction, revokeAccessLinkAction } from '../actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  KeyRound, 
-  Copy, 
-  Check, 
-  ExternalLink, 
-  RefreshCw, 
+import { toast } from '@/lib/toast';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
+import {
+  KeyRound,
+  Copy,
+  Check,
+  ExternalLink,
+  RefreshCw,
   AlertCircle,
   Loader2,
   Ban
@@ -45,7 +53,7 @@ export function AccessLinkBox({
   const [copied, setCopied] = useState(false);
   const [isRenewing, setIsRenewing] = useState(false);
   const [isRevoking, setIsRevoking] = useState(false);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [isRevokeConfirmOpen, setIsRevokeConfirmOpen] = useState(false);
 
   const actionWithParams = issueNewAccessLinkAction.bind(null, organizationId, dossierId, slug);
   const [renewState, renewFormAction, isPending] = useActionState(actionWithParams, null);
@@ -55,11 +63,35 @@ export function AccessLinkBox({
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const portalUrl = activeRawToken ? `${origin}/portal/access/${activeRawToken}` : '';
 
+  // Show renewState errors as toast
+  React.useEffect(() => {
+    if (renewState?.error) {
+      toast.error(renewState.error);
+    }
+  }, [renewState?.error]);
+
   const handleCopy = () => {
     if (portalUrl) {
       navigator.clipboard.writeText(portalUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
+    }
+  };
+
+  const handleConfirmRevoke = async () => {
+    setIsRevoking(true);
+    try {
+      const res = await revokeAccessLinkAction(organizationId, dossierId);
+      if (!res.success) {
+        toast.error(res.error || 'Error al revocar el enlace');
+      } else {
+        toast.success('Enlace de acceso revocado exitosamente.');
+        setIsRevokeConfirmOpen(false);
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error inesperado');
+    } finally {
+      setIsRevoking(false);
     }
   };
 
@@ -80,18 +112,6 @@ export function AccessLinkBox({
           </span>
         )}
       </div>
-
-      {renewState?.error && (
-        <Alert variant="destructive">
-          <AlertDescription>{renewState.error}</AlertDescription>
-        </Alert>
-      )}
-
-      {revokeError && (
-        <Alert variant="destructive">
-          <AlertDescription>{revokeError}</AlertDescription>
-        </Alert>
-      )}
 
       {activeRawToken ? (
         <div className="space-y-3 p-4 rounded-xl bg-white dark:bg-zinc-900 border border-emerald-300 dark:border-emerald-800/70 shadow-xs">
@@ -174,24 +194,7 @@ export function AccessLinkBox({
                   variant="destructive"
                   size="sm"
                   disabled={isRevoking}
-                  onClick={async () => {
-                    const confirmed = window.confirm(
-                      '¿Está seguro de que desea revocar el enlace de acceso? La contraparte ya no podrá acceder con este enlace.',
-                    );
-                    if (!confirmed) return;
-                    setIsRevoking(true);
-                    setRevokeError(null);
-                    try {
-                      const res = await revokeAccessLinkAction(organizationId, dossierId);
-                      if (!res.success) {
-                        setRevokeError(res.error || 'Error al revocar el enlace');
-                      }
-                    } catch (err: unknown) {
-                      setRevokeError(err instanceof Error ? err.message : 'Error inesperado');
-                    } finally {
-                      setIsRevoking(false);
-                    }
-                  }}
+                  onClick={() => setIsRevokeConfirmOpen(true)}
                   className="text-xs font-medium gap-1.5"
                 >
                   {isRevoking ? (
@@ -296,6 +299,33 @@ export function AccessLinkBox({
           </div>
         </form>
       )}
+
+      {/* Revoke Confirmation Dialog */}
+      <AlertDialog open={isRevokeConfirmOpen} onOpenChange={setIsRevokeConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogTitle>Revocar enlace de acceso</AlertDialogTitle>
+          <AlertDialogDescription>
+            ¿Está seguro de que desea revocar el enlace de acceso? La contraparte ya no podrá acceder con este enlace.
+          </AlertDialogDescription>
+          <div className="flex justify-end gap-3">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={isRevoking}
+              onClick={handleConfirmRevoke}
+            >
+              {isRevoking ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
+                  Revocando...
+                </>
+              ) : (
+                'Revocar enlace'
+              )}
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

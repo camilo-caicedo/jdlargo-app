@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import { runExtractionForPendingDocumentsAction } from '../actions';
 import { useRouter } from 'next/navigation';
 
@@ -23,13 +24,9 @@ export function ExtractionBoxClient({
 }: ExtractionBoxClientProps) {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleExtraction = async () => {
     setIsPending(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
 
     try {
       const result = await runExtractionForPendingDocumentsAction(
@@ -39,13 +36,13 @@ export function ExtractionBoxClient({
       );
 
       if (result.success) {
-        setSuccessMessage(result.summary || 'Extracción completada');
+        toast.success(result.summary || 'Extracción completada');
         router.refresh();
       } else {
-        setErrorMessage(result.error || 'Error al ejecutar extracción');
+        toast.error(result.error || 'Error al ejecutar extracción');
       }
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Error de conexión');
+      toast.error(err instanceof Error ? err.message : 'Error de conexión');
     } finally {
       setIsPending(false);
     }
@@ -76,19 +73,6 @@ export function ExtractionBoxClient({
           'Extraer datos con IA'
         )}
       </Button>
-
-      {successMessage && (
-        <p className="text-xs text-emerald-600 dark:text-emerald-400">
-          ✓ {successMessage}
-        </p>
-      )}
-
-      {errorMessage && (
-        <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          {errorMessage}
-        </p>
-      )}
     </div>
   );
 }

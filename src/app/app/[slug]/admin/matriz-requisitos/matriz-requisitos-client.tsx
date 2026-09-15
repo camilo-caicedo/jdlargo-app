@@ -6,8 +6,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Plus, AlertCircle, Layers, FileText, CheckCircle2, Trash2 } from "lucide-react";
+import { Plus, Layers, FileText, Trash2 } from "lucide-react";
+import { toast } from "@/lib/toast";
 import { addCounterpartyTypeAction, addRequirementAction, removeCounterpartyTypeAction, removeRequirementAction } from "./actions";
 import { createDraftFromRolesAction } from "../roles/actions";
 import { getDocumentTypeOptions, isDocumentTypeSupported } from "@/lib/document-type-catalog";
@@ -58,8 +58,6 @@ export function MatrizRequisitosClient({
   readOnly?: boolean;
 }) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
   // New counterparty type form
@@ -89,13 +87,12 @@ export function MatrizRequisitosClient({
 
   async function handleCreateDraft() {
     setIsPending(true);
-    setError(null);
     const res = await createDraftFromRolesAction(organizationId, slug);
     setIsPending(false);
     if (res.error) {
-      setError(res.error);
+      toast.error(res.error);
     } else {
-      setSuccess("Borrador creado exitosamente.");
+      toast.success("Borrador creado exitosamente.");
       router.refresh();
     }
   }
@@ -104,13 +101,11 @@ export function MatrizRequisitosClient({
     e.preventDefault();
     if (!versionId) return;
     if (!newTypeName.trim()) {
-      setError("El nombre del tipo de contraparte es obligatorio.");
+      toast.error("El nombre del tipo de contraparte es obligatorio.");
       return;
     }
 
     setIsPending(true);
-    setError(null);
-    setSuccess(null);
 
     const res = await addCounterpartyTypeAction(slug, {
       organizationId,
@@ -122,9 +117,9 @@ export function MatrizRequisitosClient({
     setIsPending(false);
 
     if (res.error) {
-      setError(res.error);
+      toast.error(res.error);
     } else {
-      setSuccess(`Tipo de contraparte "${newTypeName}" agregado.`);
+      toast.success(`Tipo de contraparte "${newTypeName}" agregado.`);
       setNewTypeName("");
       setShowAddType(false);
       router.refresh();
@@ -135,13 +130,11 @@ export function MatrizRequisitosClient({
     e.preventDefault();
     if (!versionId || !selectedTypeId) return;
     if (!reqKey.trim()) {
-      setError("La clave del requisito es obligatoria.");
+      toast.error("La clave del requisito es obligatoria.");
       return;
     }
 
     setIsPending(true);
-    setError(null);
-    setSuccess(null);
 
     const res = await addRequirementAction(slug, {
       organizationId,
@@ -162,9 +155,9 @@ export function MatrizRequisitosClient({
     setIsPending(false);
 
     if (res.error) {
-      setError(res.error);
+      toast.error(res.error);
     } else {
-      setSuccess(`Requisito "${reqKey}" agregado exitosamente.`);
+      toast.success(`Requisito "${reqKey}" agregado exitosamente.`);
       setReqKey("");
       setSelectedTypeId(null);
       router.refresh();
@@ -175,7 +168,6 @@ export function MatrizRequisitosClient({
     if (!deleteConfirm || !versionId) return;
 
     setIsPending(true);
-    setError(null);
 
     try {
       if (deleteConfirm.type === "type") {
@@ -186,9 +178,9 @@ export function MatrizRequisitosClient({
           deleteConfirm.id,
         );
         if (res.error) {
-          setError(res.error);
+          toast.error(res.error);
         } else {
-          setSuccess(`Tipo de contraparte "${deleteConfirm.name}" eliminado.`);
+          toast.success(`Tipo de contraparte "${deleteConfirm.name}" eliminado.`);
           router.refresh();
         }
       } else {
@@ -199,9 +191,9 @@ export function MatrizRequisitosClient({
           deleteConfirm.id,
         );
         if (res.error) {
-          setError(res.error);
+          toast.error(res.error);
         } else {
-          setSuccess(`Requisito "${deleteConfirm.name}" eliminado.`);
+          toast.success(`Requisito "${deleteConfirm.name}" eliminado.`);
           router.refresh();
         }
       }
@@ -213,22 +205,6 @@ export function MatrizRequisitosClient({
 
   return (
     <div className="space-y-6">
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {success && (
-        <Alert className="border-emerald-500/50 text-emerald-700 dark:text-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-          <AlertTitle>Éxito</AlertTitle>
-          <AlertDescription>{success}</AlertDescription>
-        </Alert>
-      )}
-
       {/* Header card with status */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">

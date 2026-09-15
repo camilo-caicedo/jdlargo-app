@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from '@/lib/toast';
 import {
   Combobox,
   ComboboxContent,
@@ -103,8 +103,6 @@ export function DeclarationForm({
 
   const [isSaving, setIsSaving] = React.useState(false);
   const [isCompleting, setIsCompleting] = React.useState(false);
-  const [saveSuccessMsg, setSaveSuccessMsg] = React.useState<string | null>(null);
-  const [generalError, setGeneralError] = React.useState<string | null>(null);
 
   const fieldRefs = React.useRef<Record<string, HTMLElement | null>>({});
 
@@ -197,8 +195,6 @@ export function DeclarationForm({
         return next;
       });
     }
-    setSaveSuccessMsg(null);
-    setGeneralError(null);
   };
 
   // 1. Guardar avance
@@ -217,13 +213,11 @@ export function DeclarationForm({
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      setGeneralError('Hay errores de validación en los campos modificados.');
+      toast.error('Hay errores de validación en los campos modificados.');
       return;
     }
 
     setIsSaving(true);
-    setGeneralError(null);
-    setSaveSuccessMsg(null);
 
     // Only send dirty fields
     const payload: Record<string, unknown> = {};
@@ -234,14 +228,14 @@ export function DeclarationForm({
     try {
       const res = await saveDeclaredFieldsAction(token, dossierId, organizationId, payload);
       if (!res.success) {
-        setGeneralError(res.error || 'Error al guardar el avance');
+        toast.error(res.error || 'Error al guardar el avance');
       } else {
         setDirtyKeys(new Set());
         setFieldErrors({});
-        setSaveSuccessMsg('Avance guardado correctamente en el sistema.');
+        toast.success('Avance guardado correctamente en el sistema.');
       }
     } catch (err: unknown) {
-      setGeneralError(err instanceof Error ? err.message : 'Error inesperado de conexión');
+      toast.error(err instanceof Error ? err.message : 'Error inesperado de conexión');
     } finally {
       setIsSaving(false);
     }
@@ -250,8 +244,6 @@ export function DeclarationForm({
   // 2. Finalizar diligenciamiento
   const handleComplete = async () => {
     setIsCompleting(true);
-    setGeneralError(null);
-    setSaveSuccessMsg(null);
 
     try {
       // First save dirty keys if any
@@ -262,7 +254,7 @@ export function DeclarationForm({
         }
         const saveRes = await saveDeclaredFieldsAction(token, dossierId, organizationId, payload);
         if (!saveRes.success) {
-          setGeneralError(saveRes.error || 'Error al guardar cambios previos a la finalización');
+          toast.error(saveRes.error || 'Error al guardar cambios previos a la finalización');
           setIsCompleting(false);
           return;
         }
@@ -274,18 +266,18 @@ export function DeclarationForm({
       if (!res.success) {
         if (res.missingFields && res.missingFields.length > 0) {
           setMissingFieldKeys(new Set(res.missingFields));
-          setGeneralError('Por favor complete todos los campos obligatorios antes de finalizar.');
+          toast.error('Por favor complete todos los campos obligatorios antes de finalizar.');
           // Scroll to first missing field
           const firstMissing = res.missingFields[0];
           if (firstMissing && fieldRefs.current[firstMissing]) {
             fieldRefs.current[firstMissing]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
         } else {
-          setGeneralError(res.error || 'Error al finalizar el diligenciamiento');
+          toast.error(res.error || 'Error al finalizar el diligenciamiento');
         }
       }
     } catch (err: unknown) {
-      setGeneralError(err instanceof Error ? err.message : 'Error inesperado al finalizar');
+      toast.error(err instanceof Error ? err.message : 'Error inesperado al finalizar');
     } finally {
       setIsCompleting(false);
     }
@@ -309,30 +301,19 @@ export function DeclarationForm({
 
       <CardContent className="space-y-6 pt-6">
         {correctionsReason && (
-          <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200">
-            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-            <div className="space-y-1">
-              <span className="font-semibold text-xs block">Se han solicitado correcciones para este expediente:</span>
-              <AlertDescription className="text-xs text-amber-800 dark:text-amber-300">
-                {correctionsReason}
-              </AlertDescription>
+          <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <span className="font-semibold text-xs block">Se han solicitado correcciones para este expediente:</span>
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  {correctionsReason}
+                </p>
+              </div>
             </div>
-          </Alert>
+          </div>
         )}
 
-        {generalError && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="text-xs">{generalError}</AlertDescription>
-          </Alert>
-        )}
-
-        {saveSuccessMsg && (
-          <Alert className="border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            <AlertDescription className="text-xs">{saveSuccessMsg}</AlertDescription>
-          </Alert>
-        )}
 
         {/* Dynamic Fields */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

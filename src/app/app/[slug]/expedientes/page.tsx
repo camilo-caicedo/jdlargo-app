@@ -4,55 +4,16 @@ import { requireAuthenticatedUserId } from '@/server/auth/session';
 import { listActiveMembershipsForUser } from '@/server/organizations/use-cases';
 import { checkUserPermission, enforceUserPermission } from '@/server/auth/access-control';
 import { listDossiersForOrganization } from '@/server/dossiers/dossier';
+import { getStateBadge, DossierState } from '@/lib/dossier-states';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { 
-  FolderKanban, 
-  FolderPlus, 
-  Clock, 
-  FileText, 
+import {
+  FolderKanban,
+  FolderPlus,
+  Clock,
+  FileText,
   ChevronRight,
 } from 'lucide-react';
-
-function getStateBadge(state: string) {
-  switch (state) {
-    case 'borrador':
-      return {
-        label: 'Borrador',
-        className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700',
-      };
-    case 'en_diligenciamiento':
-      return {
-        label: 'En diligenciamiento',
-        className: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200/50 dark:border-blue-800/40',
-      };
-    case 'en_revision':
-      return {
-        label: 'En revisión',
-        className: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200/50 dark:border-amber-800/40',
-      };
-    case 'aprobado':
-      return {
-        label: 'Aprobado',
-        className: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200/50 dark:border-emerald-800/40',
-      };
-    case 'rechazado':
-      return {
-        label: 'Rechazado',
-        className: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 border-red-200/50 dark:border-red-800/40',
-      };
-    case 'cancelado':
-      return {
-        label: 'Cancelado',
-        className: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800',
-      };
-    default:
-      return {
-        label: state,
-        className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700',
-      };
-  }
-}
 
 export default async function ExpedientesListPage({
   params,
@@ -88,9 +49,9 @@ export default async function ExpedientesListPage({
 
   // Metrics breakdown
   const total = dossiers.length;
-  const inProgress = dossiers.filter((d) => d.state === 'en_diligenciamiento').length;
-  const inReview = dossiers.filter((d) => d.state === 'en_revision').length;
-  const decided = dossiers.filter((d) => ['aprobado', 'rechazado'].includes(d.state)).length;
+  const inProgress = dossiers.filter((d) => d.state === DossierState.IN_DILIGENCE).length;
+  const inReview = dossiers.filter((d) => d.state === DossierState.IN_REVIEW).length;
+  const decided = dossiers.filter((d) => [DossierState.APPROVED, DossierState.REJECTED].includes(d.state as DossierState)).length;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">

@@ -5,7 +5,6 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
   History,
   Filter,
@@ -16,8 +15,8 @@ import {
   Cpu,
   ChevronRight,
   X,
-  AlertCircle,
 } from "lucide-react";
+import { toast } from "@/lib/toast";
 import { fetchAuditLogsAction, getEntityAuditHistoryAction } from "./actions";
 
 interface AuditEntry {
@@ -50,7 +49,6 @@ export function BitacoraClient({
   const [entries, setEntries] = useState<AuditEntry[]>(initialEntries);
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Filters
   const [actionFilter, setActionFilter] = useState("");
@@ -70,7 +68,6 @@ export function BitacoraClient({
 
   async function handleApplyFilters(resetPagination = true) {
     setLoading(true);
-    setError(null);
 
     const res = await fetchAuditLogsAction(organizationId, {
       action: actionFilter.trim() || undefined,
@@ -84,7 +81,7 @@ export function BitacoraClient({
     setLoading(false);
 
     if (res.error) {
-      setError(res.error);
+      toast.error(res.error);
     } else if (res.entries) {
       if (resetPagination) {
         setEntries(res.entries as unknown as AuditEntry[]);
@@ -108,14 +105,6 @@ export function BitacoraClient({
 
   return (
     <div className="space-y-6">
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
       {/* Filters Card */}
       <Card>
         <CardHeader className="py-4">

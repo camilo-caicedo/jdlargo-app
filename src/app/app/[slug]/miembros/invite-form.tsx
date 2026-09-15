@@ -5,7 +5,7 @@ import { inviteMemberAction, type MemberActionState } from './actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from '@/lib/toast';
 import { Loader2, MailPlus, Copy, Check } from 'lucide-react';
 
 interface RoleOption {
@@ -28,7 +28,14 @@ export function InviteMemberForm({ organizationId, roles }: InviteMemberFormProp
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (state?.success) {
+    if (state?.error) {
+      toast.error(state.error);
+    }
+  }, [state?.error]);
+
+  useEffect(() => {
+    if (state?.success && state.message) {
+      toast.success(state.message);
       formRef.current?.reset();
     }
   }, [state?.success]);
@@ -45,18 +52,6 @@ export function InviteMemberForm({ organizationId, roles }: InviteMemberFormProp
 
   return (
     <form ref={formRef} action={formAction} className="space-y-4">
-      {state?.error && (
-        <Alert variant="destructive">
-          <AlertDescription>{state.error}</AlertDescription>
-        </Alert>
-      )}
-
-      {state?.success && state.message && (
-        <Alert className="border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
-          <AlertDescription>{state.message}</AlertDescription>
-        </Alert>
-      )}
-
       {state?.success && state.rawToken && (
         <div className="space-y-3 p-4 rounded-xl bg-white dark:bg-zinc-900 border border-emerald-300 dark:border-emerald-800/70 shadow-xs">
           <div className="flex items-center justify-between">

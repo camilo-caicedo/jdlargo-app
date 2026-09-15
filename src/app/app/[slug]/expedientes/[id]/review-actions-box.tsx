@@ -14,7 +14,8 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 import { AlertMessageDialog } from '@/components/alert-message-dialog';
-import { CheckCheck, RotateCcw, Loader2, AlertCircle, X } from 'lucide-react';
+import { CheckCheck, RotateCcw, Loader2, X } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import { requestCorrectionsAction, completeReviewAction } from '../actions';
 
 interface ReviewActionsBoxProps {
@@ -37,7 +38,6 @@ export function ReviewActionsBox({
   const [isOverrideOpen, setIsOverrideOpen] = React.useState(false);
   const [overrideReason, setOverrideReason] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [alertMessage, setAlertMessage] = React.useState<string | null>(null);
   const [isCompleteConfirmOpen, setIsCompleteConfirmOpen] = React.useState(false);
 
@@ -52,7 +52,6 @@ export function ReviewActionsBox({
     }
 
     setIsLoading(true);
-    setErrorMessage(null);
     try {
       const res = await requestCorrectionsAction(
         organizationId,
@@ -60,13 +59,14 @@ export function ReviewActionsBox({
         correctionsReason.trim(),
       );
       if (res.success) {
+        toast.success('Correcciones solicitadas.');
         setIsCorrectionsOpen(false);
         setCorrectionsReason('');
       } else {
-        setErrorMessage(res.error || 'Error al solicitar correcciones');
+        toast.error(res.error || 'Error al solicitar correcciones');
       }
     } catch {
-      setErrorMessage('Error de conexión al solicitar correcciones');
+      toast.error('Error de conexión al solicitar correcciones');
     } finally {
       setIsLoading(false);
     }
@@ -74,14 +74,15 @@ export function ReviewActionsBox({
 
   const handleCompleteReview = async () => {
     setIsLoading(true);
-    setErrorMessage(null);
     try {
       const res = await completeReviewAction(organizationId, dossierId);
       if (!res.success) {
-        setErrorMessage(res.error || 'No se puede dar por revisado el expediente');
+        toast.error(res.error || 'No se puede dar por revisado el expediente');
+      } else {
+        toast.success('Expediente marcado como revisado.');
       }
     } catch {
-      setErrorMessage('Error de conexión al dar por revisado el expediente');
+      toast.error('Error de conexión al dar por revisado el expediente');
     } finally {
       setIsLoading(false);
     }
@@ -94,17 +95,17 @@ export function ReviewActionsBox({
     }
 
     setIsLoading(true);
-    setErrorMessage(null);
     try {
       const res = await completeReviewAction(organizationId, dossierId, overrideReason.trim());
       if (res.success) {
+        toast.success('Excepción autorizada.');
         setIsOverrideOpen(false);
         setOverrideReason('');
       } else {
-        setErrorMessage(res.error || 'No se puede autorizar la excepción para este expediente');
+        toast.error(res.error || 'No se puede autorizar la excepción para este expediente');
       }
     } catch {
-      setErrorMessage('Error de conexión al autorizar la excepción');
+      toast.error('Error de conexión al autorizar la excepción');
     } finally {
       setIsLoading(false);
     }
@@ -151,13 +152,6 @@ export function ReviewActionsBox({
           Dar por revisado
         </Button>
       </div>
-
-      {errorMessage && (
-        <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          {errorMessage}
-        </p>
-      )}
 
       {/* Modal for requesting corrections */}
       {isCorrectionsOpen && (

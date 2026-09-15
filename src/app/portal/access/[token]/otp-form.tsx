@@ -5,8 +5,7 @@ import { useForm } from 'react-hook-form';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { verifyPortalOtp } from './actions';
 
 interface OtpFormProps {
@@ -19,7 +18,6 @@ interface FormValues {
 
 export function OtpForm({ accessTokenId }: OtpFormProps) {
   const router = useRouter();
-  const [serverError, setServerError] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const {
@@ -33,14 +31,12 @@ export function OtpForm({ accessTokenId }: OtpFormProps) {
   });
 
   const onSubmit = async (values: FormValues) => {
-    setServerError(null);
     setIsSubmitting(true);
 
     try {
       const res = await verifyPortalOtp(accessTokenId, values.code);
       if (!res.success) {
         const errMsg = res.error || 'Código incorrecto';
-        setServerError(errMsg);
         toast.error(errMsg);
         setIsSubmitting(false);
         return;
@@ -51,7 +47,6 @@ export function OtpForm({ accessTokenId }: OtpFormProps) {
       router.refresh();
     } catch {
       const errMsg = 'Ocurrió un error al verificar el código. Intente de nuevo.';
-      setServerError(errMsg);
       toast.error(errMsg);
       setIsSubmitting(false);
     }
@@ -59,11 +54,6 @@ export function OtpForm({ accessTokenId }: OtpFormProps) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      {serverError && (
-        <Alert variant="destructive">
-          <AlertDescription>{serverError}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="space-y-2">
         <label

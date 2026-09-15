@@ -7,18 +7,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import {
   ShieldCheck,
   Plus,
   Trash2,
-  CheckCircle,
-  AlertTriangle,
   Lock,
   Loader2,
   FileEdit,
   Send,
 } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import type { PrivacyNoticePurpose } from '@/server/configuration/privacy-notice';
 import {
   savePrivacyNoticeAction,
@@ -81,8 +79,6 @@ export function PrivacyNoticeEditor({
   const [isPublishing, setIsPublishing] = useState(false);
   const [isCreatingDraft, startCreateDraftTransition] = useTransition();
 
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
   // Purpose handling
   const handleAddPurpose = () => {
     if (readOnly) return;
@@ -111,7 +107,6 @@ export function PrivacyNoticeEditor({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    setMessage(null);
 
     const formData = new FormData();
     formData.append('text', text);
@@ -123,12 +118,12 @@ export function PrivacyNoticeEditor({
     try {
       const res = await savePrivacyNoticeAction(organizationId, versionId, slug, null, formData);
       if (res.error) {
-        setMessage({ type: 'error', text: res.error });
+        toast.error(res.error);
       } else {
-        setMessage({ type: 'success', text: 'Aviso de privacidad guardado correctamente en la versión borrador.' });
+        toast.success('Aviso de privacidad guardado correctamente en la versión borrador.');
       }
     } catch (err: unknown) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Error inesperado al guardar' });
+      toast.error(err instanceof Error ? err.message : 'Error inesperado al guardar');
     } finally {
       setIsSaving(false);
     }
@@ -136,11 +131,12 @@ export function PrivacyNoticeEditor({
 
   // Create Draft handler (when published)
   const handleCreateDraft = () => {
-    setMessage(null);
     startCreateDraftTransition(async () => {
       const res = await createDraftForEditingAction(organizationId, slug);
       if (!res.success) {
-        setMessage({ type: 'error', text: res.error || 'Error al crear borrador' });
+        toast.error(res.error || 'Error al crear borrador');
+      } else {
+        toast.success('Nuevo borrador creado.');
       }
     });
   };
@@ -148,12 +144,11 @@ export function PrivacyNoticeEditor({
   // Publish handler
   const handlePublish = async () => {
     if (!publishReason.trim()) {
-      setMessage({ type: 'error', text: 'Debe ingresar un motivo explícito para la publicación.' });
+      toast.error('Debe ingresar un motivo explícito para la publicación.');
       return;
     }
 
     setIsPublishing(true);
-    setMessage(null);
 
     const formData = new FormData();
     formData.append('reason', publishReason.trim());
@@ -161,13 +156,13 @@ export function PrivacyNoticeEditor({
     try {
       const res = await publishDraftAction(organizationId, versionId, slug, null, formData);
       if (res.error) {
-        setMessage({ type: 'error', text: res.error });
+        toast.error(res.error);
       } else {
         setShowPublishDialog(false);
-        setMessage({ type: 'success', text: 'La versión de configuración ha sido publicada exitosamente.' });
+        toast.success('La versión de configuración ha sido publicada exitosamente.');
       }
     } catch (err: unknown) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Error inesperado al publicar' });
+      toast.error(err instanceof Error ? err.message : 'Error inesperado al publicar');
     } finally {
       setIsPublishing(false);
     }
@@ -175,15 +170,6 @@ export function PrivacyNoticeEditor({
 
   return (
     <div className="space-y-6">
-      {/* Alert message */}
-      {message && (
-        <Alert variant={message.type === 'error' ? 'destructive' : 'default'} className={message.type === 'success' ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200' : ''}>
-          {message.type === 'success' ? <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : <AlertTriangle className="h-4 w-4" />}
-          <AlertTitle>{message.type === 'success' ? 'Operación exitosa' : 'Atención'}</AlertTitle>
-          <AlertDescription>{message.text}</AlertDescription>
-        </Alert>
-      )}
-
       {/* Version Status Card */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border bg-card text-card-foreground shadow-sm">
         <div className="flex items-center gap-3">

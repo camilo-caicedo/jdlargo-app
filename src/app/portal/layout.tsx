@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import * as React from 'react';
-import { Toaster } from 'sonner';
 
 export const metadata: Metadata = {
   title: 'Portal de Contraparte | JD Largo',
@@ -14,7 +13,6 @@ export default function PortalLayout({
 }) {
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50 flex flex-col items-center p-4 sm:p-8 md:p-12">
-      <Toaster richColors position="top-center" />
       <header className="mb-8 text-center">
         <div className="inline-flex items-center gap-2 font-semibold text-xl tracking-tight text-zinc-900 dark:text-zinc-100">
           <span className="w-3 h-3 rounded-full bg-emerald-600 dark:bg-emerald-500 inline-block" />

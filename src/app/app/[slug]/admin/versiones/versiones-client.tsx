@@ -6,7 +6,6 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import {
   CheckCircle2,
   Clock,
@@ -14,10 +13,10 @@ import {
   ArrowRightLeft,
   Plus,
   Loader2,
-  FileCheck2,
   Eye,
   FileSignature,
 } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import {
   createDraftAction,
   publishDraftAction,
@@ -73,34 +72,29 @@ export function VersionesClient({
   const [compareV1, setCompareV1] = useState('');
   const [compareV2, setCompareV2] = useState('');
   const [diffResult, setDiffResult] = useState<VersionDiffResult | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const handleCreateDraft = () => {
-    setErrorMsg(null);
-    setSuccessMsg(null);
     startTransition(async () => {
       const res = await createDraftAction(organizationId, slug);
       if (res.error) {
-        setErrorMsg(res.error);
+        toast.error(res.error);
       } else {
-        setSuccessMsg('Borrador de configuración creado exitosamente.');
+        toast.success('Borrador de configuración creado exitosamente.');
       }
     });
   };
 
   const handleUpdateSignatureLevel = () => {
     if (!draftVersionId) return;
-    setErrorMsg(null);
-    setSuccessMsg(null);
     setSignatureLevelSaved(false);
 
     startTransition(async () => {
       const res = await updateSignatureLevelAction(organizationId, draftVersionId, slug, signatureLevel);
       if (res.error) {
-        setErrorMsg(res.error);
+        toast.error(res.error);
       } else {
         setSignatureLevelSaved(true);
+        toast.success('Nivel de firma actualizado.');
       }
     });
   };
@@ -108,8 +102,6 @@ export function VersionesClient({
   const handlePublish = (e: React.FormEvent) => {
     e.preventDefault();
     if (!draftVersionId) return;
-    setErrorMsg(null);
-    setSuccessMsg(null);
 
     const formData = new FormData();
     formData.set('reason', publishReason);
@@ -117,9 +109,9 @@ export function VersionesClient({
     startTransition(async () => {
       const res = await publishDraftAction(organizationId, draftVersionId, slug, null, formData);
       if (res.error) {
-        setErrorMsg(res.error);
+        toast.error(res.error);
       } else {
-        setSuccessMsg('Versión publicada exitosamente. Ahora rige en la organización.');
+        toast.success('Versión publicada exitosamente. Ahora rige en la organización.');
         setPublishReason('');
       }
     });
@@ -136,11 +128,10 @@ export function VersionesClient({
 
   const handleCompare = () => {
     if (!compareV1 || !compareV2) return;
-    setErrorMsg(null);
     startTransition(async () => {
       const res = await compareVersionsAction(organizationId, compareV1, compareV2);
       if (res.error) {
-        setErrorMsg(res.error);
+        toast.error(res.error);
       } else {
         setDiffResult(res.diff ?? null);
       }
@@ -172,21 +163,6 @@ export function VersionesClient({
 
   return (
     <div className="space-y-6">
-      {errorMsg && (
-        <Alert variant="destructive">
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{errorMsg}</AlertDescription>
-        </Alert>
-      )}
-
-      {successMsg && (
-        <Alert className="border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-100">
-          <FileCheck2 className="w-4 h-4 text-emerald-600" />
-          <AlertTitle>Operación completada</AlertTitle>
-          <AlertDescription>{successMsg}</AlertDescription>
-        </Alert>
-      )}
-
       {/* Draft banner or Create Draft button */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <div>

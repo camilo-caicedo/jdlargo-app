@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from '@/lib/toast';
 import { createDossierAction, type CreateDossierFormState } from '../actions';
 import { FolderPlus, ArrowLeft, Loader2 } from 'lucide-react';
 import {
@@ -50,6 +50,13 @@ export function NewDossierForm({
 
   const [sendInviteNow, setSendInviteNow] = React.useState(true);
 
+  // Show state errors as toast
+  React.useEffect(() => {
+    if (state?.error) {
+      toast.error(state.error);
+    }
+  }, [state?.error]);
+
   // Combobox states
   const [docType, setDocType] = React.useState('NIT');
   const selectedDocType = React.useMemo(
@@ -87,12 +94,6 @@ export function NewDossierForm({
 
   return (
     <form action={formAction} className="space-y-6">
-      {state?.error && (
-        <Alert variant="destructive">
-          <AlertDescription>{state.error}</AlertDescription>
-        </Alert>
-      )}
-
       {/* Standard indicator */}
       <div className="rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40 p-3 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
         <span>

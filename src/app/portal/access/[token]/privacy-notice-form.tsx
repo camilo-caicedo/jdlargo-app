@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useState, useTransition } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from '@/lib/toast';
 import { ShieldCheck, XCircle, CheckCircle2, Loader2, Info } from 'lucide-react';
 import { submitConsentAction } from './consent-actions';
 import type { PrivacyNoticePurpose } from '@/server/configuration/privacy-notice';
@@ -33,10 +33,8 @@ export function PrivacyNoticeForm({
   rightsChannels,
 }: PrivacyNoticeFormProps) {
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
 
   const handleDecision = (decision: 'accepted' | 'not_accepted') => {
-    setError(null);
     startTransition(async () => {
       const res = await submitConsentAction(
         token,
@@ -46,7 +44,7 @@ export function PrivacyNoticeForm({
         decision,
       );
       if (!res.success) {
-        setError(res.error || 'Ocurrió un error al procesar su respuesta.');
+        toast.error(res.error || 'Ocurrió un error al procesar su respuesta.');
       }
     });
   };
@@ -67,12 +65,6 @@ export function PrivacyNoticeForm({
       </CardHeader>
 
       <CardContent className="space-y-6">
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
         {/* Text statement */}
         <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-line leading-relaxed max-h-60 overflow-y-auto">
           {text}

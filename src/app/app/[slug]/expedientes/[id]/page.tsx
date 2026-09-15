@@ -11,6 +11,7 @@ import { getLatestDocumentsForDossier, evaluateDocumentExpirations } from '@/ser
 import { ensureReviewEntryTransition, getReviewSummary } from '@/server/dossiers/review';
 import { getDecisionsForDossier } from '@/server/dossiers/decision';
 import { getEntityAuditHistory, logAuditEvent } from '@/server/audit/service';
+import { getStateBadge } from '@/lib/dossier-states';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ArrowLeft, History, CheckCircle2, Clock, AlertCircle, KeyRound, ShieldAlert } from 'lucide-react';
 import { AccessLinkBox } from './access-link-box';
@@ -24,20 +25,11 @@ import { ReconciliationBox } from './reconciliation-box';
 import { ExtractionBox } from './extraction-box';
 
 function getHumanState(state: string) {
-  switch (state) {
-    case 'borrador': return { label: 'Borrador', color: 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200' };
-    case 'enviada': return { label: 'Enviada', color: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' };
-    case 'en_diligenciamiento': return { label: 'En diligenciamiento', color: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300' };
-    case 'documentos_recibidos': return { label: 'Documentos recibidos', color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300' };
-    case 'en_revision': return { label: 'En revisión', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' };
-    case 'pendiente_de_decision': return { label: 'Pendiente de decisión', color: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' };
-    case 'aprobada': return { label: 'Aprobada', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' };
-    case 'aprobada_con_condiciones': return { label: 'Aprobada con condiciones', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' };
-    case 'rechazada': return { label: 'Rechazada', color: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' };
-    case 'cerrada': return { label: 'Cerrada', color: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' };
-    case 'expirado_pendiente': return { label: 'Expirado / Pendiente', color: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300' };
-    default: return { label: state, color: 'bg-zinc-100 text-zinc-800' };
-  }
+  const badge = getStateBadge(state);
+  return {
+    label: badge.label,
+    color: badge.className,
+  };
 }
 
 export default async function DossierDetailPage({

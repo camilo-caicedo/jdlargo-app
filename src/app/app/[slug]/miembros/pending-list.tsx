@@ -14,6 +14,7 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 import { Loader2, Trash2, RefreshCw } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import { type InvitationDetail } from '@/server/organizations/invitations';
 
 interface PendingListProps {
@@ -23,7 +24,6 @@ interface PendingListProps {
 
 export function PendingInvitationsList({ organizationId, invitations }: PendingListProps) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
 
   if (invitations.length === 0) {
@@ -36,11 +36,12 @@ export function PendingInvitationsList({ organizationId, invitations }: PendingL
 
   const handleRevoke = async (invitationId: string) => {
     setLoadingId(invitationId);
-    setActionError(null);
     try {
       const res = await revokeInvitationAction(organizationId, invitationId);
       if (!res.success) {
-        setActionError(res.error || 'No se pudo revocar la invitación');
+        toast.error(res.error || 'No se pudo revocar la invitación');
+      } else {
+        toast.success('Invitación revocada.');
       }
     } finally {
       setLoadingId(null);
@@ -49,14 +50,15 @@ export function PendingInvitationsList({ organizationId, invitations }: PendingL
 
   const handleResend = async (email: string, role: string) => {
     setLoadingId(email);
-    setActionError(null);
     try {
       const formData = new FormData();
       formData.append('email', email);
       formData.append('role', role);
       const res = await inviteMemberAction(organizationId, null, formData);
       if (!res.success) {
-        setActionError(res.error || 'No se pudo reenviar la invitación');
+        toast.error(res.error || 'No se pudo reenviar la invitación');
+      } else {
+        toast.success('Invitación reenviada.');
       }
     } finally {
       setLoadingId(null);
@@ -65,12 +67,6 @@ export function PendingInvitationsList({ organizationId, invitations }: PendingL
 
   return (
     <div className="space-y-3">
-      {actionError && (
-        <div className="text-xs text-red-600 bg-red-50 dark:bg-red-950/40 p-2.5 rounded-md">
-          {actionError}
-        </div>
-      )}
-
       <div className="divide-y divide-zinc-200 dark:divide-zinc-800 rounded-md border border-zinc-200 dark:border-zinc-800 overflow-hidden">
         {invitations.map((inv) => {
           const isBusy = loadingId === inv.id || loadingId === inv.email;

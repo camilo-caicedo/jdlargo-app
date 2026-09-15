@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertMessageDialog } from '@/components/alert-message-dialog';
+import { toast } from '@/lib/toast';
 import type { RequirementDetail } from '@/lib/requirement-evaluation';
 import {
   MAX_UPLOAD_SIZE_BYTES,
@@ -210,8 +210,21 @@ export function DocumentUploadSection({
         [reqKey]: { status: 'analyzing', fileName: file.name },
       }));
 
-      await analyzeDocumentAction(token, dossierId, organizationId, confirmRes.documentId!);
+      const analyzeResult = await analyzeDocumentAction(token, dossierId, organizationId, confirmRes.documentId!);
 
+      if (!analyzeResult.success) {
+        setUploadState((prev) => ({
+          ...prev,
+          [reqKey]: {
+            status: 'error',
+            error: analyzeResult.error || 'Error al analizar el documento con IA',
+          },
+        }));
+        toast.error(analyzeResult.error || 'Error al analizar el documento con IA');
+        return;
+      }
+
+      toast.success('Documento cargado y analizado exitosamente.');
       setUploadState((prev) => ({
         ...prev,
         [reqKey]: { status: 'success', fileName: file.name },
@@ -484,12 +497,12 @@ export function DocumentUploadSection({
               </div>
 
               {state.status === 'error' && state.error && (
-                <Alert variant="destructive" className="py-2 text-xs">
+                <div className="py-2 px-3 rounded-md border border-rose-200 bg-rose-50 dark:bg-rose-950/30 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
-                    <AlertDescription>{state.error}</AlertDescription>
+                    <span>{state.error}</span>
                   </div>
-                </Alert>
+                </div>
               )}
 
               {state.status === 'success' && (

@@ -25,6 +25,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
+import { toast } from '@/lib/toast';
 import { recordDecisionAction, closeDossierAction } from '../actions';
 import type { EvidenceRef } from '@/server/dossiers/decision';
 
@@ -74,7 +75,6 @@ export function DecisionBox({
   const [selectedEvidence, setSelectedEvidence] = React.useState<EvidenceRef[]>([]);
   const [conditions, setConditions] = React.useState<string[]>(['']);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   // Close dossier state
   const [isClosing, setIsClosing] = React.useState(false);
@@ -108,29 +108,28 @@ export function DecisionBox({
 
   const handleSubmitDecision = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage(null);
 
     if (!title.trim()) {
-      setErrorMessage('El cargo del responsable es obligatorio');
+      toast.error('El cargo del responsable es obligatorio');
       return;
     }
     if (!rationale.trim()) {
-      setErrorMessage('El fundamento de la decisión es obligatorio');
+      toast.error('El fundamento de la decisión es obligatorio');
       return;
     }
     if (selectedEvidence.length === 0) {
-      setErrorMessage('Debe seleccionar al menos una evidencia del checklist');
+      toast.error('Debe seleccionar al menos una evidencia del checklist');
       return;
     }
     if (!validUntil) {
-      setErrorMessage('Debe especificar una fecha de vigencia válida');
+      toast.error('Debe especificar una fecha de vigencia válida');
       return;
     }
 
     if (decisionType === 'approve_with_conditions') {
       const clean = conditions.filter((c) => c && c.trim() !== '');
       if (clean.length === 0) {
-        setErrorMessage('Debe especificar al menos una condición estructurada');
+        toast.error('Debe especificar al menos una condición estructurada');
         return;
       }
     }
@@ -151,12 +150,13 @@ export function DecisionBox({
       });
 
       if (res.success) {
+        toast.success('Decisión registrada exitosamente.');
         setIsFormOpen(false);
       } else {
-        setErrorMessage(res.error || 'Error al registrar la decisión');
+        toast.error(res.error || 'Error al registrar la decisión');
       }
     } catch {
-      setErrorMessage('Error de conexión al registrar la decisión');
+      toast.error('Error de conexión al registrar la decisión');
     } finally {
       setIsSubmitting(false);
     }
@@ -164,14 +164,15 @@ export function DecisionBox({
 
   const handleCloseDossier = async () => {
     setIsClosing(true);
-    setErrorMessage(null);
     try {
       const res = await closeDossierAction(organizationId, dossierId);
       if (!res.success) {
-        setErrorMessage(res.error || 'Error al cerrar el expediente');
+        toast.error(res.error || 'Error al cerrar el expediente');
+      } else {
+        toast.success('Expediente cerrado exitosamente.');
       }
     } catch {
-      setErrorMessage('Error de conexión al cerrar el expediente');
+      toast.error('Error de conexión al cerrar el expediente');
     } finally {
       setIsClosing(false);
     }
@@ -205,13 +206,6 @@ export function DecisionBox({
           </Button>
         )}
       </div>
-
-      {errorMessage && !isFormOpen && (
-        <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          {errorMessage}
-        </p>
-      )}
 
       {/* Decision Modal Form */}
       {isFormOpen && (
@@ -447,13 +441,6 @@ export function DecisionBox({
                   )}
                 </div>
               </div>
-
-              {errorMessage && (
-                <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1 pt-1">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  {errorMessage}
-                </p>
-              )}
 
               {/* Form Actions */}
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">

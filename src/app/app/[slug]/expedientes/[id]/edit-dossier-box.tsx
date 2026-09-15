@@ -14,6 +14,7 @@ import {
   ComboboxList,
 } from '@/components/ui/combobox';
 import { Pencil, Check, X, Loader2, Lock } from 'lucide-react';
+import { toast } from '@/lib/toast';
 
 interface MemberOption {
   id: string;
@@ -53,12 +54,20 @@ export function EditDossierBox({
     async (prevState, formData) => {
       const result = await actionWithParams(prevState, formData);
       if (result.success) {
+        toast.success('Expediente actualizado.');
         setIsOpen(false);
       }
       return result;
     },
     null,
   );
+
+  // Show formState errors as toast
+  React.useEffect(() => {
+    if (formState?.error) {
+      toast.error(formState.error);
+    }
+  }, [formState?.error]);
 
   // Member combobox state
   const memberItems = React.useMemo(
@@ -122,12 +131,6 @@ export function EditDossierBox({
     return (
       <div className="border-t sm:border-t-0 sm:border-l border-zinc-100 dark:border-zinc-800 pt-3 sm:pt-0 sm:pl-6">
         <form action={formAction} className="space-y-3">
-          {formState?.error && (
-            <p className="text-[11px] text-red-600 dark:text-red-400">
-              {formState.error}
-            </p>
-          )}
-
           <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
             <div className="space-y-1">
               <label htmlFor="internalOwnerId" className="text-[11px] font-medium text-zinc-500">

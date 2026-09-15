@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AlertMessageDialog } from '@/components/alert-message-dialog';
+import { toast } from '@/lib/toast';
 import {
   FileText,
   Download,
@@ -54,7 +55,6 @@ export function DocumentsCard({
   const [actionInProgressId, setActionInProgressId] = React.useState<string | null>(null);
   const [rejectingDocId, setRejectingDocId] = React.useState<string | null>(null);
   const [rejectReason, setRejectReason] = React.useState<string>('');
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [alertMessage, setAlertMessage] = React.useState<string | null>(null);
 
   const isReviewable = dossierState === 'en_revision' && canReviewDocuments;
@@ -80,14 +80,15 @@ export function DocumentsCard({
 
   const handleMarkValid = async (docId: string) => {
     setActionInProgressId(docId);
-    setErrorMessage(null);
     try {
       const res = await markDocumentValidAction(organizationId, dossierId, docId);
       if (!res.success) {
-        setErrorMessage(res.error || 'Error al marcar documento como válido');
+        toast.error(res.error || 'Error al marcar documento como válido');
+      } else {
+        toast.success('Documento marcado como válido.');
       }
     } catch {
-      setErrorMessage('Error de conexión al marcar documento');
+      toast.error('Error de conexión al marcar documento');
     } finally {
       setActionInProgressId(null);
     }
@@ -100,17 +101,17 @@ export function DocumentsCard({
     }
 
     setActionInProgressId(docId);
-    setErrorMessage(null);
     try {
       const res = await rejectDocumentAction(organizationId, dossierId, docId, rejectReason.trim());
       if (!res.success) {
-        setErrorMessage(res.error || 'Error al rechazar documento');
+        toast.error(res.error || 'Error al rechazar documento');
       } else {
+        toast.success('Documento rechazado.');
         setRejectingDocId(null);
         setRejectReason('');
       }
     } catch {
-      setErrorMessage('Error de conexión al rechazar documento');
+      toast.error('Error de conexión al rechazar documento');
     } finally {
       setActionInProgressId(null);
     }
@@ -158,12 +159,6 @@ export function DocumentsCard({
         <CardDescription className="text-xs">
           Evidencia documental recibida con huella digital SHA-256 verificada.
         </CardDescription>
-        {errorMessage && (
-          <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1 pt-1">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            {errorMessage}
-          </p>
-        )}
       </CardHeader>
       <CardContent className="p-0">
         {documents.length === 0 ? (
