@@ -7,6 +7,7 @@ import {
   AlertDialog,
   AlertDialogContent,
   AlertDialogHeader,
+  AlertDialogFooter,
   AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogCancel,
@@ -488,7 +489,7 @@ export function DecisionBox({
               ¿Confirma que desea cerrar formalmente el expediente? Una vez cerrado, no admitirá más transiciones de estado.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex items-center justify-end gap-2">
+          <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
@@ -498,7 +499,7 @@ export function DecisionBox({
             >
               Cerrar expediente
             </AlertDialogAction>
-          </div>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>

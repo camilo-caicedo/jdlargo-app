@@ -7,6 +7,7 @@ import {
   AlertDialog,
   AlertDialogContent,
   AlertDialogHeader,
+  AlertDialogFooter,
   AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogCancel,
@@ -300,7 +301,7 @@ export function ReviewActionsBox({
               ¿Confirma que todos los requisitos y documentos han sido revisados y validados?
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex items-center justify-end gap-2">
+          <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
@@ -310,7 +311,7 @@ export function ReviewActionsBox({
             >
               Confirmar
             </AlertDialogAction>
-          </div>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 

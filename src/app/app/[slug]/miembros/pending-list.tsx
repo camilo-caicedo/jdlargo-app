@@ -7,6 +7,7 @@ import {
   AlertDialog,
   AlertDialogContent,
   AlertDialogHeader,
+  AlertDialogFooter,
   AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogCancel,
@@ -148,7 +149,7 @@ export function PendingInvitationsList({ organizationId, invitations }: PendingL
               ¿Está seguro de que desea revocar esta invitación? El enlace dejará de funcionar.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex items-center justify-end gap-2">
+          <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
@@ -160,7 +161,7 @@ export function PendingInvitationsList({ organizationId, invitations }: PendingL
             >
               Revocar
             </AlertDialogAction>
-          </div>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
