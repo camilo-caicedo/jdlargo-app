@@ -73,6 +73,8 @@ export function MatrizRequisitosClient({
   const [reqKey, setReqKey] = useState("");
   const [reqMandatory, setReqMandatory] = useState<"always" | "conditional" | "optional">("always");
   const [reqBlocking, setReqBlocking] = useState(true);
+  const [reqValidityMode, setReqValidityMode] = useState<"no_expiration" | "duration_from_issued" | "fixed_date">("no_expiration");
+  const [reqValidityDays, setReqValidityDays] = useState<string>("365");
   const [documentTypeWarning, setDocumentTypeWarning] = useState<string | null>(null);
 
   // Combobox state for document types
@@ -150,6 +152,11 @@ export function MatrizRequisitosClient({
       key: reqKey.trim(),
       mandatory: reqMandatory,
       blocking: reqBlocking,
+      validity: reqType === 'document_type'
+        ? reqValidityMode === 'duration_from_issued'
+          ? { mode: 'duration_from_issued', durationDays: Number(reqValidityDays) || 365 }
+          : { mode: reqValidityMode }
+        : undefined,
     });
 
     setIsPending(false);
@@ -522,7 +529,40 @@ export function MatrizRequisitosClient({
                         </div>
                       </div>
 
-                      <div className="flex justify-end gap-2">
+                      {/* Validity selector (only for document_type requirements) */}
+                      {reqType === "document_type" && (
+                        <div className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Vigencia del documento</Label>
+                            <select
+                              className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs"
+                              value={reqValidityMode}
+                              onChange={(e) => setReqValidityMode(e.target.value as "no_expiration" | "duration_from_issued" | "fixed_date")}
+                            >
+                              <option value="no_expiration">No expira</option>
+                              <option value="duration_from_issued">Vence N días después de expedición</option>
+                              <option value="fixed_date">Fecha fija de vencimiento</option>
+                            </select>
+                          </div>
+
+                          {reqValidityMode === "duration_from_issued" && (
+                            <div className="space-y-1">
+                              <Label htmlFor="reqValidityDays" className="text-xs">Días de vigencia</Label>
+                              <Input
+                                id="reqValidityDays"
+                                type="number"
+                                value={reqValidityDays}
+                                onChange={(e) => setReqValidityDays(e.target.value)}
+                                placeholder="365"
+                                className="h-8 text-xs"
+                                min="1"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex justify-end gap-2 pt-4">
                         <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedTypeId(null)}>
                           Cancelar
                         </Button>

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { type DocumentValidityConfig } from './document-validity';
 
 // Conjunto cerrado de condición (ADR-0004 §4: campo | operador | valor | combinadores y/o)
 export const CONDITION_OPERATORS = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'not_in'] as const;
@@ -45,6 +46,7 @@ export interface RequirementDetail {
   blocking: boolean;
   condition: Condition | null;
   validation: z.infer<typeof validationSchema> | null;
+  validity: DocumentValidityConfig | null;
 }
 
 /**

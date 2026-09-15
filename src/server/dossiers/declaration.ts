@@ -276,10 +276,10 @@ export async function completeDeclaration(
       }
     }
 
-    // 4. Para cada requisito de documento obligatorio, verificar que exista en getLatestDocumentsForDossier no rechazado
+    // 4. Para cada requisito de documento obligatorio, verificar que exista en getLatestDocumentsForDossier no rechazado ni vencido
     const latestDocs = await getLatestDocumentsForDossier(input.organizationId, input.dossierId, tx);
     const deliveredDocTypes = new Set(
-      latestDocs.filter((d) => d.state !== 'rejected').map((d) => d.documentType),
+      latestDocs.filter((d) => d.state !== 'rejected' && d.state !== 'expired').map((d) => d.documentType),
     );
 
     const missingDocumentTypes: string[] = [];

@@ -9,10 +9,12 @@ import {
   ALLOWED_MIME_TYPES,
   DOSSIER_DOCUMENTS_BUCKET,
 } from '@/lib/document-upload-constants';
-import { registerAssertion } from '../assertions/service';
+import { registerAssertion, getActiveAssertionsForDossier } from '../assertions/service';
 import { logAuditEvent } from '../audit/service';
+import { getOpenDiscrepancies } from '../reconciliation/service';
 import { enforceUserPermission } from '../auth/access-control';
 import { scanBuffer } from '@/lib/antivirus';
+import { computeEffectiveExpiry } from '@/lib/document-validity';
 
 export interface RequestDocumentUploadInput {
   organizationId: string;
@@ -339,7 +341,23 @@ export async function confirmDocumentUpload(
 
     const nextVersion = existingVersions.length > 0 ? existingVersions[0].version + 1 : 1;
 
-    // 4. INSERT en documents
+    // 4. Validar vigencia: si el documento está vencido al momento de subir, rechazarlo
+    let initialState: 'received' | 'requires_review' = 'received';
+    let initialRejectionReason: string | null = null;
+
+    if (docReq.validity && docReq.validity.mode !== 'no_expiration') {
+      const computedExpiry = computeEffectiveExpiry(
+        docReq.validity,
+        input.issuedAt ?? null,
+        input.expiresAt ?? null,
+      );
+      if (computedExpiry && computedExpiry < new Date()) {
+        initialState = 'requires_review';
+        initialRejectionReason = `El documento ya está vencido (vigencia expiró el ${computedExpiry.toISOString().split('T')[0]})`;
+      }
+    }
+
+    // 5. INSERT en documents
     const [createdDoc] = await tx
       .insert(documents)
       .values({
@@ -351,13 +369,14 @@ export async function confirmDocumentUpload(
         hash: input.hash,
         size: input.size,
         format: input.format,
-        state: 'received',
+        state: initialState,
         uploadedByType: input.uploadedByType,
         uploadedByUserId: input.uploadedByUserId,
+        rejectionReason: initialRejectionReason,
       })
       .returning({ id: documents.id, version: documents.version });
 
-    // 5. Metadatos declarados -> registerAssertion
+    // 6. Metadatos declarados -> registerAssertion
     if (input.declaredIssuer) {
       await registerAssertion(
         {
@@ -409,7 +428,7 @@ export async function confirmDocumentUpload(
       );
     }
 
-    // 6. logAuditEvent
+    // 7. logAuditEvent
     await logAuditEvent(
       {
         organizationId: input.organizationId,
@@ -441,6 +460,67 @@ export async function confirmDocumentUpload(
     return execute(txClient as DatabaseTransaction);
   }
   return db.transaction(execute);
+}
+
+export interface EvaluateDocumentExpirationsResult {
+  expiredDocumentIds: string[];
+}
+
+export async function evaluateDocumentExpirations(
+  organizationId: string,
+  dossierId: string,
+  txClient?: DrizzleClient,
+): Promise<EvaluateDocumentExpirationsResult> {
+  const client = txClient || db;
+
+  const [latestDocs, requirements, activeAssertions, openDiscrepancies] = await Promise.all([
+    getLatestDocumentsForDossier(organizationId, dossierId, client),
+    getDossierPendingRequirements(organizationId, dossierId, client),
+    getActiveAssertionsForDossier(organizationId, dossierId, client),
+    getOpenDiscrepancies(organizationId, dossierId, client),
+  ]);
+
+  const validityByDocType = new Map(
+    requirements
+      .filter((r): r is typeof r & { validity: NonNullable<typeof r.validity> } => r.type === 'document_type' && r.validity !== null)
+      .map((r) => [r.key, r.validity]),
+  );
+  const discrepancyFields = new Set(openDiscrepancies.map((d) => d.field));
+  const expiredDocumentIds: string[] = [];
+  const now = new Date();
+
+  for (const doc of latestDocs) {
+    if (!['received', 'under_review', 'valid'].includes(doc.state)) continue;
+
+    const validity = validityByDocType.get(doc.documentType);
+    if (!validity || validity.mode === 'no_expiration') continue;
+
+    const issuedField = `document:${doc.documentType}:issued_at`;
+    const expiresField = `document:${doc.documentType}:expires_at`;
+    if (discrepancyFields.has(issuedField) || discrepancyFields.has(expiresField)) continue; // vigencia pendiente
+
+    const issuedVal = activeAssertions.find((a) => a.field === issuedField)?.value as string | undefined;
+    const expiresVal = activeAssertions.find((a) => a.field === expiresField)?.value as string | undefined;
+    const effectiveExpiry = computeEffectiveExpiry(validity, issuedVal ?? null, expiresVal ?? null);
+
+    if (effectiveExpiry && effectiveExpiry < now) {
+      await client.update(documents).set({ state: 'expired' }).where(eq(documents.id, doc.id));
+      await logAuditEvent(
+        {
+          organizationId,
+          actorType: 'system',
+          action: 'document.expired',
+          entity: 'document',
+          entityId: doc.id,
+          metadata: { documentType: doc.documentType, expiresAt: effectiveExpiry.toISOString() },
+        },
+        client,
+      );
+      expiredDocumentIds.push(doc.id);
+    }
+  }
+
+  return { expiredDocumentIds };
 }
 
 export interface DocumentSummary {

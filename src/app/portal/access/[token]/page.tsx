@@ -14,7 +14,7 @@ import { PrivacyNoticeForm } from './privacy-notice-form';
 import { DeclarationForm } from './declaration-form';
 import { DocumentUploadSection } from './document-upload-section';
 import { getDeclarationForm } from '@/server/dossiers/declaration';
-import { getLatestDocumentsForDossier } from '@/server/documents/document';
+import { getLatestDocumentsForDossier, evaluateDocumentExpirations } from '@/server/documents/document';
 import { CheckCircle, Clock } from 'lucide-react';
 
 export default async function PortalAccessPage({
@@ -118,6 +118,9 @@ export default async function PortalAccessPage({
   // 3. Granted and (if needed) verified: trigger entry transition to 'en_diligenciamiento'
   if (result.dossierId && result.organizationId) {
     await ensureEntryTransition(result.dossierId, result.organizationId);
+
+    // Auto-evaluate document expirations (HU-021)
+    await evaluateDocumentExpirations(result.organizationId, result.dossierId);
 
     // 4. Privacy Notice Gate (HU-011)
     const consent = await getConsentForDossier(result.organizationId, result.dossierId);

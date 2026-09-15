@@ -377,50 +377,52 @@ export function DocumentUploadSection({
               )}
 
               {/* Optional metadata inputs: emisor, fecha expedición, fecha vencimiento */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
-                    <Building className="w-3 h-3" />
-                    Emisor (opcional)
-                  </Label>
-                  <Input
-                    type="text"
-                    placeholder="Ej. DIAN, Cámara de Comercio"
-                    className="h-8 text-xs"
-                    disabled={isLoading}
-                    value={metadata[req.key]?.declaredIssuer || ''}
-                    onChange={(e) => handleMetadataChange(req.key, 'declaredIssuer', e.target.value)}
-                  />
-                </div>
+              {req.validity && req.validity.mode !== 'no_expiration' && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
+                      <Building className="w-3 h-3" />
+                      Emisor (opcional)
+                    </Label>
+                    <Input
+                      type="text"
+                      placeholder="Ej. DIAN, Cámara de Comercio"
+                      className="h-8 text-xs"
+                      disabled={isLoading}
+                      value={metadata[req.key]?.declaredIssuer || ''}
+                      onChange={(e) => handleMetadataChange(req.key, 'declaredIssuer', e.target.value)}
+                    />
+                  </div>
 
-                <div className="space-y-1">
-                  <Label className="text-xs flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
-                    <Calendar className="w-3 h-3" />
-                    Fecha expedición (opcional)
-                  </Label>
-                  <Input
-                    type="date"
-                    className="h-8 text-xs"
-                    disabled={isLoading}
-                    value={metadata[req.key]?.issuedAt || ''}
-                    onChange={(e) => handleMetadataChange(req.key, 'issuedAt', e.target.value)}
-                  />
-                </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
+                      <Calendar className="w-3 h-3" />
+                      Fecha expedición (opcional)
+                    </Label>
+                    <Input
+                      type="date"
+                      className="h-8 text-xs"
+                      disabled={isLoading}
+                      value={metadata[req.key]?.issuedAt || ''}
+                      onChange={(e) => handleMetadataChange(req.key, 'issuedAt', e.target.value)}
+                    />
+                  </div>
 
-                <div className="space-y-1">
-                  <Label className="text-xs flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
-                    <Calendar className="w-3 h-3" />
-                    Fecha vencimiento (opcional)
-                  </Label>
-                  <Input
-                    type="date"
-                    className="h-8 text-xs"
-                    disabled={isLoading}
-                    value={metadata[req.key]?.expiresAt || ''}
-                    onChange={(e) => handleMetadataChange(req.key, 'expiresAt', e.target.value)}
-                  />
+                  <div className="space-y-1">
+                    <Label className="text-xs flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
+                      <Calendar className="w-3 h-3" />
+                      Fecha vencimiento (opcional)
+                    </Label>
+                    <Input
+                      type="date"
+                      className="h-8 text-xs"
+                      disabled={isLoading}
+                      value={metadata[req.key]?.expiresAt || ''}
+                      onChange={(e) => handleMetadataChange(req.key, 'expiresAt', e.target.value)}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Upload Input & Progress */}
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">

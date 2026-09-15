@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
 import { counterpartyTypes, requirements, configurationVersions } from '../db/schema';
+import { documentValiditySchema, type DocumentValidityConfig } from '@/lib/document-validity';
 
 export {
   CONDITION_OPERATORS,
@@ -34,6 +35,7 @@ export interface AddRequirementInput {
   blocking?: boolean;
   condition?: Condition;
   validation?: z.infer<typeof validationSchema>;
+  validity?: DocumentValidityConfig;
 }
 
 export async function addCounterpartyType(
@@ -113,6 +115,13 @@ export async function addRequirement(
     validationSchema.parse(input.validation);
   }
 
+  if (input.validity) {
+    if (input.type !== 'document_type') {
+      throw new Error("La vigencia solo aplica a requisitos de tipo 'document_type'");
+    }
+    documentValiditySchema.parse(input.validity);
+  }
+
   const [inserted] = await client
     .insert(requirements)
     .values({
@@ -126,6 +135,7 @@ export async function addRequirement(
       blocking: input.blocking !== undefined ? input.blocking : true,
       condition: input.condition || null,
       validation: input.validation || null,
+      validity: input.validity || null,
     })
     .returning();
 
@@ -184,6 +194,7 @@ export async function getRequirementsForType(
     blocking: r.blocking,
     condition: r.condition as Condition | null,
     validation: r.validation as z.infer<typeof validationSchema> | null,
+    validity: r.validity as DocumentValidityConfig | null,
   }));
 }
 

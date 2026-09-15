@@ -9,6 +9,7 @@ import { registerAssertion } from '../assertions/service';
 import { markDocumentRequiresReview } from '../documents/document';
 import { getRequirementsForType } from '../configuration/requirement-matrix';
 import { isDocumentTypeSupported } from '@/lib/document-type-catalog';
+import { type DocumentValidityConfig } from '@/lib/document-validity';
 
 export interface RunDocumentExtractionInput {
   organizationId: string;
@@ -102,6 +103,17 @@ export async function runDocumentExtraction(
       key: r.key,
       label: r.key,
     }));
+
+  // 3b. Agregar campos de fecha si el tipo documental tiene vigencia configurada
+  const docTypeReq = allReqs.find((r) => r.type === 'document_type' && r.key === doc.documentType);
+  if (docTypeReq?.validity) {
+    const validity = docTypeReq.validity as DocumentValidityConfig;
+    if (validity.mode === 'duration_from_issued') {
+      expectedFields.push({ key: `document:${doc.documentType}:issued_at`, label: 'Fecha de expedición del documento' });
+    } else if (validity.mode === 'fixed_date') {
+      expectedFields.push({ key: `document:${doc.documentType}:expires_at`, label: 'Fecha de vencimiento del documento' });
+    }
+  }
 
   // 4. Llama al motor de extracción
   const engineResult = await engine.extract({

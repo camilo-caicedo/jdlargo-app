@@ -7,7 +7,7 @@ import { getDossierById, getDossierPendingRequirements } from '@/server/dossiers
 import { getActiveAccessLinkForDossier, getAccessUsesForDossier } from '@/server/dossiers/access';
 import { getDossierHistory } from '@/server/dossiers/state-machine';
 import { getConsentForDossier } from '@/server/consent/consent';
-import { getLatestDocumentsForDossier } from '@/server/documents/document';
+import { getLatestDocumentsForDossier, evaluateDocumentExpirations } from '@/server/documents/document';
 import { ensureReviewEntryTransition, getReviewSummary } from '@/server/dossiers/review';
 import { getDecisionsForDossier } from '@/server/dossiers/decision';
 import { getEntityAuditHistory, logAuditEvent } from '@/server/audit/service';
@@ -73,6 +73,9 @@ export default async function DossierDetailPage({
 
   // Auto-transition from documentos_recibidos -> en_revision if applicable (HU-014)
   await ensureReviewEntryTransition(organizationId, id);
+
+  // Auto-evaluate document expirations (HU-021)
+  await evaluateDocumentExpirations(organizationId, id);
 
   const dossier = await getDossierById(organizationId, id);
 
@@ -144,6 +147,9 @@ export default async function DossierDetailPage({
   const declaredValuesMap = new Map(rawValues.map((v) => [v.field, v]));
   const documentsMap = new Map(rawDocs.map((d) => [d.documentType, d]));
 
+  // Calculate expired documents for display (HU-021)
+  const expiredDocs = rawDocs.filter((d) => d.state === 'expired');
+
   // Find last review_completed_with_exception event
   const lastExceptionEvent = [...auditHistory]
     .reverse()
@@ -213,7 +219,7 @@ export default async function DossierDetailPage({
       return v && v.value !== undefined && v.value !== null && v.value !== '';
     } else if (req.type === 'document_type') {
       const d = documentsMap.get(req.key);
-      return d && d.state !== 'rejected';
+      return d && d.state !== 'rejected' && d.state !== 'expired';
     }
     return false;
   }).length;
@@ -255,6 +261,23 @@ export default async function DossierDetailPage({
       </div>
 
       <DecisionHistoryBanner decisionsHistory={decisionsHistory} />
+
+      {/* Expired documents banner */}
+      {expiredDocs.length > 0 && (
+        <div className="p-4 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/20">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-rose-900 dark:text-rose-300">
+                Documentos vencidos
+              </p>
+              <p className="text-sm text-rose-800 dark:text-rose-400 mt-1">
+                {expiredDocs.map((d) => d.documentType).join(', ')} {expiredDocs.length === 1 ? 'está vencido' : 'están vencidos'} y no cubre{expiredDocs.length === 1 ? '' : 'n'} su{expiredDocs.length === 1 ? '' : 's'} requisito{expiredDocs.length === 1 ? '' : 's'}.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main summary header */}
       <div className="p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs space-y-4">

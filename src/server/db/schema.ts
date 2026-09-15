@@ -151,6 +151,7 @@ export const requirements = pgTable('requirements', {
   blocking: boolean('blocking').notNull().default(true),
   condition: jsonb('condition'),
   validation: jsonb('validation'),
+  validity: jsonb('validity'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex('requirements_org_ver_type_std_key_unique').on(
@@ -335,7 +336,7 @@ export const documents = pgTable('documents', {
   size: integer('size').notNull(), // bytes, real (no declarado)
   format: text('format', { enum: ['pdf', 'jpg', 'png'] }).notNull(), // real, por magic bytes
   state: text('state', {
-    enum: ['received', 'under_review', 'valid', 'requires_review', 'rejected'],
+    enum: ['received', 'under_review', 'valid', 'requires_review', 'rejected', 'expired'],
   }).notNull().default('received'),
   uploadedByType: text('uploaded_by_type', { enum: ['user', 'counterparty'] }).notNull(),
   uploadedByUserId: uuid('uploaded_by_user_id').references(() => users.id),

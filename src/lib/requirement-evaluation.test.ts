@@ -53,6 +53,7 @@ describe('requirement-evaluation', () => {
       blocking: true,
       condition: null,
       validation: null,
+      validity: null,
     };
 
     it('returns true for always and false for optional', () => {
