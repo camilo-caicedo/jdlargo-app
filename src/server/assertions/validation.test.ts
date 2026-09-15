@@ -18,6 +18,7 @@ let configAlfaVersionId: string;
 let configBetaVersionId: string;
 let analystAlfaId: string;
 let analystBetaId: string;
+let auditorAlfaId: string;
 
 async function cleanupTestData() {
   await new Promise((r) => setTimeout(r, 100));
@@ -114,6 +115,14 @@ beforeAll(async () => {
     organizationId: orgBetaId,
     userId: analystBetaId,
     role: 'compliance_analyst',
+  });
+
+  // Create auditor with auditor role (no dossier:review permission)
+  auditorAlfaId = await createTestAuthUser('auditor@alfa-validation.test', 'Auditor Alfa');
+  await grantMembership(adminAlfaId, {
+    organizationId: orgAlfaId,
+    userId: auditorAlfaId,
+    role: 'auditor',
   });
 
   // Get active configuration versions
@@ -325,7 +334,7 @@ describe('HU-020: Validación humana de lo extraído', () => {
   });
 
   it('Escenario: Validar exige permiso', async () => {
-    // Use analyst from Beta org (no permissions in Alfa org)
+    // Auditor has membership in Org Alfa but role (auditor) lacks dossier:review permission
     const aiExecId = await helperRecordAiExecution(orgAlfaId, dossierAlfaId);
     const assertReg = await registerAssertion({
       organizationId: orgAlfaId,
@@ -340,13 +349,13 @@ describe('HU-020: Validación humana de lo extraído', () => {
       aiExecutionId: aiExecId,
     });
 
-    // User without membership in Org Alfa should fail with permission error
+    // User with auditor role (member but no dossier:review) should fail
     const error = await validateExtractedAssertion({
       organizationId: orgAlfaId,
       dossierId: dossierAlfaId,
       assertionId: assertReg.id,
       result: 'confirmed',
-      validatedBy: analystBetaId,
+      validatedBy: auditorAlfaId,
     }).catch((e) => e);
 
     expect(error).toBeInstanceOf(Error);
