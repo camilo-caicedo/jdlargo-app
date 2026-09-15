@@ -16,10 +16,12 @@ import {
   Loader2,
   FileCheck2,
   Eye,
+  FileSignature,
 } from 'lucide-react';
 import {
   createDraftAction,
   publishDraftAction,
+  updateSignatureLevelAction,
   compareVersionsAction,
   getVersionDetailAction,
 } from './actions';
@@ -40,6 +42,7 @@ interface VersionesClientProps {
   slug: string;
   versions: VersionItem[];
   draftVersionId: string | null;
+  draftSignatureLevel: 1 | 2;
   canAdminister: boolean;
   canPublish: boolean;
 }
@@ -49,15 +52,19 @@ export function VersionesClient({
   slug,
   versions,
   draftVersionId,
+  draftSignatureLevel,
   canAdminister,
   canPublish,
 }: VersionesClientProps) {
   const [isPending, startTransition] = useTransition();
   const [publishReason, setPublishReason] = useState('');
+  const [signatureLevel, setSignatureLevel] = useState<1 | 2>(draftSignatureLevel);
+  const [signatureLevelSaved, setSignatureLevelSaved] = useState(false);
   const [selectedVersionDetail, setSelectedVersionDetail] = useState<{
     id: string;
     versionNumber: string;
     status: string;
+    signatureLevelRequired: number;
     roles: ConfigurationRoleDetail[];
     counterpartyTypes: CounterpartyTypeWithRequirements[];
     privacyNotice: { text: string; purposes: unknown } | null;
@@ -78,6 +85,22 @@ export function VersionesClient({
         setErrorMsg(res.error);
       } else {
         setSuccessMsg('Borrador de configuración creado exitosamente.');
+      }
+    });
+  };
+
+  const handleUpdateSignatureLevel = () => {
+    if (!draftVersionId) return;
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setSignatureLevelSaved(false);
+
+    startTransition(async () => {
+      const res = await updateSignatureLevelAction(organizationId, draftVersionId, slug, signatureLevel);
+      if (res.error) {
+        setErrorMsg(res.error);
+      } else {
+        setSignatureLevelSaved(true);
       }
     });
   };
@@ -184,6 +207,57 @@ export function VersionesClient({
           </Button>
         )}
       </div>
+
+      {/* Signature level selector for the current draft */}
+      {draftVersionId && canAdminister && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <FileSignature className="w-4 h-4 text-zinc-500" />
+              <CardTitle className="text-sm font-semibold">Nivel de firma exigido</CardTitle>
+            </div>
+            <CardDescription className="text-xs">
+              Nivel 1: evidencia de aceptación (huella del contenido, IP, fecha). Nivel 2: lo
+              anterior más un código de verificación por correo antes de firmar. Aplica a los
+              expedientes que se abran bajo esta versión una vez publicada.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="flex gap-2">
+              {([1, 2] as const).map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => {
+                    setSignatureLevel(level);
+                    setSignatureLevelSaved(false);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                    signatureLevel === level
+                      ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+                      : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  Nivel {level}
+                </button>
+              ))}
+            </div>
+            <Button
+              onClick={handleUpdateSignatureLevel}
+              disabled={isPending || signatureLevel === draftSignatureLevel}
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+            >
+              {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+              Guardar en el borrador
+            </Button>
+            {signatureLevelSaved && signatureLevel === draftSignatureLevel && (
+              <span className="text-xs text-emerald-600 dark:text-emerald-400">Guardado</span>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Publish draft form if draft exists */}
       {draftVersionId && canPublish && (
@@ -297,6 +371,15 @@ export function VersionesClient({
             </Button>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Signature Level Section */}
+            <div className="flex items-center gap-2 text-xs">
+              <FileSignature className="w-3.5 h-3.5 text-zinc-400" />
+              <span className="text-zinc-500 dark:text-zinc-400">Nivel de firma exigido:</span>
+              <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                Nivel {selectedVersionDetail.signatureLevelRequired}
+              </span>
+            </div>
+
             {/* Roles Section */}
             {selectedVersionDetail.roles.length > 0 && (
               <div>

@@ -71,6 +71,7 @@ export interface ConfigurationVersionDetail {
   publishedBy: string | null;
   publishedAt: Date | null;
   reason: string | null;
+  signatureLevelRequired: number;
   roles: ConfigurationRoleDetail[];
   counterpartyTypes: CounterpartyTypeWithRequirements[];
   privacyNotice: Pick<PrivacyNoticeDetail, 'id' | 'text' | 'purposes'> | null;
@@ -647,6 +648,7 @@ export async function getConfigurationVersionDetail(
     publishedBy: version.publishedBy,
     publishedAt: version.publishedAt,
     reason: version.reason,
+    signatureLevelRequired: version.signatureLevelRequired,
     roles: rolesDetail,
     counterpartyTypes: counterpartyTypesDetail,
     privacyNotice,

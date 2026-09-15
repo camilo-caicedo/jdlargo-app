@@ -6,6 +6,7 @@ import { checkUserPermission } from "@/server/auth/access-control";
 import {
   createDraftConfiguration,
   publishDraftConfiguration,
+  updateDraftConfiguration,
   compareConfigurationVersions,
   getConfigurationVersionDetail,
 } from "@/server/configuration/service";
@@ -23,6 +24,27 @@ export async function createDraftAction(organizationId: string, slug: string) {
     return { success: true, versionId: draft.versionId };
   } catch (err: unknown) {
     return { error: err instanceof Error ? err.message : "Error al crear borrador" };
+  }
+}
+
+export async function updateSignatureLevelAction(
+  organizationId: string,
+  versionId: string,
+  slug: string,
+  signatureLevelRequired: 1 | 2,
+) {
+  const userId = await requireAuthenticatedUserId();
+  const perm = await checkUserPermission(userId, organizationId, "configuration:administer");
+  if (!perm.granted) {
+    return { error: perm.reason || "No tiene permiso para modificar el borrador de configuración." };
+  }
+
+  try {
+    await updateDraftConfiguration(organizationId, versionId, { signatureLevelRequired });
+    revalidatePath(`/app/${slug}/admin/versiones`);
+    return { success: true };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : "Error al actualizar el nivel de firma" };
   }
 }
 

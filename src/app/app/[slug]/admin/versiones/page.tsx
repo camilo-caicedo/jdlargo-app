@@ -81,6 +81,7 @@ export default async function VersionesPage({
         slug={slug}
         versions={versions}
         draftVersionId={draftVersion?.id || null}
+        draftSignatureLevel={(draftVersion?.signatureLevelRequired as 1 | 2 | undefined) ?? 1}
         canAdminister={canAdminister.granted}
         canPublish={canPublish.granted}
       />
