@@ -53,7 +53,7 @@ import {
   rejectDocument,
   evaluateDocumentExpirations,
 } from './document';
-import { computeEffectiveExpiry } from '@/lib/document-validity';
+import { computeEffectiveExpiry, type DocumentValidityConfig } from '@/lib/document-validity';
 import { getOpenDiscrepancies } from '../reconciliation/service';
 
 const directUrl = process.env.DIRECT_URL;
@@ -732,19 +732,7 @@ describe('HU-013: Carga de los documentos exigidos', () => {
   });
 
   describe('HU-021: Vigencias y estados del documento', () => {
-    it('confirmDocumentUpload con vigencia vencida: rechaza al subir y registra afirmaciones', async () => {
-      const adminStorage = createSupabaseAdminClient();
-      const testPdfContent = Buffer.from('%PDF-1.4 Fake PDF for expiry test');
-      const testPath = `${dossierId}/doc_rut/expired-1.pdf`;
-      createdStoragePaths.push(testPath);
-
-      await adminStorage.storage
-        .from(DOSSIER_DOCUMENTS_BUCKET)
-        .upload(testPath, testPdfContent, { contentType: 'application/pdf', upsert: true });
-
-      const validated = await readAndValidateUploadedFile(testPath);
-
-      // Crear draft nuevo para agregar requisito con vigencia
+    const createTestDossierWithConfig = async (docTypeName: string, validity?: DocumentValidityConfig['validity']) => {
       const newDraft = await createDraftConfiguration({ organizationId: orgId, standard: 'SARLAFT' });
       const [type] = await adminSql`
         SELECT id FROM public.counterparty_types
@@ -756,10 +744,10 @@ describe('HU-013: Carga de los documentos exigidos', () => {
         counterpartyTypeId: type.id,
         standard: 'SARLAFT',
         type: 'document_type',
-        key: 'doc_rut_expire_test',
+        key: docTypeName,
         mandatory: 'always',
         blocking: true,
-        validity: { mode: 'duration_from_issued', durationDays: 30 },
+        ...(validity ? { validity } : {}),
       });
       await publishDraftConfiguration({
         organizationId: orgId,
@@ -768,11 +756,71 @@ describe('HU-013: Carga de los documentos exigidos', () => {
         reason: 'Test HU-021',
       });
 
+      const newDossier = await createDossierRequest({
+        organizationId: orgId,
+        requestedBy: adminUserId,
+        counterpartyTypeName: 'proveedor_custom',
+        party: {
+          identificationType: 'NIT',
+          identificationNumber: Math.floor(Math.random() * 999999999).toString(),
+          declaredName: `Test ${docTypeName}`,
+        },
+        internalOwnerId: analystUserId,
+      });
+
+      // Transicionar a en_diligenciamiento
+      await executeTransition({
+        organizationId: orgId,
+        dossierId: newDossier.id,
+        toState: 'enviada',
+        actorType: 'user',
+        actorId: adminUserId,
+      });
+      await executeTransition({
+        organizationId: orgId,
+        dossierId: newDossier.id,
+        toState: 'en_diligenciamiento',
+        actorType: 'user',
+        actorId: adminUserId,
+      });
+
+      return newDossier.id;
+    };
+
+    it('confirmDocumentUpload con vigencia vencida: rechaza al subir y registra afirmaciones', async () => {
+      const adminStorage = createSupabaseAdminClient();
+      const testDossierId = await createTestDossierWithConfig('doc_rut_expire_test', {
+        mode: 'duration_from_issued',
+        durationDays: 30,
+      });
+
+      // Debug: verify dossier config and requirements
+      const [dossierDebug] = await adminSql`
+        SELECT configuration_version_id FROM public.dossiers WHERE id = ${testDossierId}
+      `;
+      const docsReq = await adminSql`
+        SELECT key FROM public.requirements
+        WHERE configuration_version_id = ${dossierDebug.configuration_version_id}
+        AND type = 'document_type'
+      `;
+      console.log('Dossier config:', dossierDebug?.configuration_version_id);
+      console.log('Doc requirements:', docsReq.map(r => r.key));
+
+      const testPdfContent = Buffer.from('%PDF-1.4 Fake PDF for expiry test');
+      const testPath = `${testDossierId}/doc_rut_expire_test/expired-1.pdf`;
+      createdStoragePaths.push(testPath);
+
+      await adminStorage.storage
+        .from(DOSSIER_DOCUMENTS_BUCKET)
+        .upload(testPath, testPdfContent, { contentType: 'application/pdf', upsert: true });
+
+      const validated = await readAndValidateUploadedFile(testPath);
+
       // Subir documento con fecha de expedición hace 40 días (vencido)
       const fortyDaysAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const confirmRes = await confirmDocumentUpload({
         organizationId: orgId,
-        dossierId,
+        dossierId: testDossierId,
         documentType: 'doc_rut_expire_test',
         storagePath: testPath,
         hash: validated.hash,
@@ -783,7 +831,7 @@ describe('HU-013: Carga de los documentos exigidos', () => {
       });
 
       // Verificar que el documento está en estado requires_review
-      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const latest = await getLatestDocumentsForDossier(orgId, testDossierId);
       const expiredDoc = latest.find((d) => d.documentType === 'doc_rut_expire_test');
       expect(expiredDoc?.state).toBe('requires_review');
       expect(expiredDoc?.rejectionReason).toContain('vencido');
@@ -799,8 +847,12 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
     it('confirmDocumentUpload con no_expiration: no rechaza por fechas pasadas', async () => {
       const adminStorage = createSupabaseAdminClient();
+      const testDossierId = await createTestDossierWithConfig('doc_rut_no_exp', {
+        mode: 'no_expiration',
+      });
+
       const testPdfContent = Buffer.from('%PDF-1.4 Fake PDF no-expiry');
-      const testPath = `${dossierId}/doc_rut_no_exp/no-exp-1.pdf`;
+      const testPath = `${testDossierId}/doc_rut_no_exp/no-exp-1.pdf`;
       createdStoragePaths.push(testPath);
 
       await adminStorage.storage
@@ -809,35 +861,11 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
       const validated = await readAndValidateUploadedFile(testPath);
 
-      // Crear draft nuevo para agregar requisito sin vigencia
-      const newDraft = await createDraftConfiguration({ organizationId: orgId, standard: 'SARLAFT' });
-      const [type] = await adminSql`
-        SELECT id FROM public.counterparty_types
-        WHERE organization_id = ${orgId} AND configuration_version_id = ${newDraft.versionId} LIMIT 1
-      `;
-      await addRequirement({
-        organizationId: orgId,
-        configurationVersionId: newDraft.versionId,
-        counterpartyTypeId: type.id,
-        standard: 'SARLAFT',
-        type: 'document_type',
-        key: 'doc_rut_no_exp',
-        mandatory: 'always',
-        blocking: true,
-        validity: { mode: 'no_expiration' },
-      });
-      await publishDraftConfiguration({
-        organizationId: orgId,
-        versionId: newDraft.versionId,
-        publishedBy: adminUserId,
-        reason: 'Test HU-021',
-      });
-
       // Subir documento con fecha muy antigua
       const veryOld = '1990-01-01';
       await confirmDocumentUpload({
         organizationId: orgId,
-        dossierId,
+        dossierId: testDossierId,
         documentType: 'doc_rut_no_exp',
         storagePath: testPath,
         hash: validated.hash,
@@ -848,7 +876,7 @@ describe('HU-013: Carga de los documentos exigidos', () => {
       });
 
       // Verificar que el documento está en estado received (no rechazado)
-      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const latest = await getLatestDocumentsForDossier(orgId, testDossierId);
       const doc = latest.find((d) => d.documentType === 'doc_rut_no_exp');
       expect(doc?.state).toBe('received');
       expect(doc?.rejectionReason).toBeNull();
@@ -856,8 +884,13 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
     it('evaluateDocumentExpirations sin discrepancia: transiciona a expired', async () => {
       const adminStorage = createSupabaseAdminClient();
+      const testDossierId = await createTestDossierWithConfig('doc_eval_exp', {
+        mode: 'duration_from_issued',
+        durationDays: 365,
+      });
+
       const testPdfContent = Buffer.from('%PDF-1.4 For expiry evaluation');
-      const testPath = `${dossierId}/doc_eval_exp/eval-1.pdf`;
+      const testPath = `${testDossierId}/doc_eval_exp/eval-1.pdf`;
       createdStoragePaths.push(testPath);
 
       await adminStorage.storage
@@ -866,35 +899,11 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
       const validated = await readAndValidateUploadedFile(testPath);
 
-      // Crear draft nuevo para agregar requisito con vigencia
-      const newDraft = await createDraftConfiguration({ organizationId: orgId, standard: 'SARLAFT' });
-      const [type] = await adminSql`
-        SELECT id FROM public.counterparty_types
-        WHERE organization_id = ${orgId} AND configuration_version_id = ${newDraft.versionId} LIMIT 1
-      `;
-      await addRequirement({
-        organizationId: orgId,
-        configurationVersionId: newDraft.versionId,
-        counterpartyTypeId: type.id,
-        standard: 'SARLAFT',
-        type: 'document_type',
-        key: 'doc_eval_exp',
-        mandatory: 'always',
-        blocking: true,
-        validity: { mode: 'duration_from_issued', durationDays: 365 },
-      });
-      await publishDraftConfiguration({
-        organizationId: orgId,
-        versionId: newDraft.versionId,
-        publishedBy: adminUserId,
-        reason: 'Test HU-021',
-      });
-
       // Subir documento con fecha de hace 400 días (vencido)
       const fourHundredDaysAgo = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const confirmRes = await confirmDocumentUpload({
         organizationId: orgId,
-        dossierId,
+        dossierId: testDossierId,
         documentType: 'doc_eval_exp',
         storagePath: testPath,
         hash: validated.hash,
@@ -905,10 +914,10 @@ describe('HU-013: Carga de los documentos exigidos', () => {
       });
 
       // Evaluar vigencias
-      const result = await evaluateDocumentExpirations(orgId, dossierId);
+      const result = await evaluateDocumentExpirations(orgId, testDossierId);
 
       // Verificar que el documento está en expired
-      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const latest = await getLatestDocumentsForDossier(orgId, testDossierId);
       const evalDoc = latest.find((d) => d.documentType === 'doc_eval_exp');
       expect(evalDoc?.state).toBe('expired');
       expect(result.expiredDocumentIds).toContain(evalDoc?.id);
@@ -923,8 +932,13 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
     it('evaluateDocumentExpirations con discrepancia abierta: no transiciona', async () => {
       const adminStorage = createSupabaseAdminClient();
+      const testDossierId = await createTestDossierWithConfig('doc_discr', {
+        mode: 'duration_from_issued',
+        durationDays: 30,
+      });
+
       const testPdfContent = Buffer.from('%PDF-1.4 For discrepancy test');
-      const testPath = `${dossierId}/doc_discr/discr-1.pdf`;
+      const testPath = `${testDossierId}/doc_discr/discr-1.pdf`;
       createdStoragePaths.push(testPath);
 
       await adminStorage.storage
@@ -933,35 +947,11 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
       const validated = await readAndValidateUploadedFile(testPath);
 
-      // Crear draft nuevo para agregar requisito con vigencia
-      const newDraft = await createDraftConfiguration({ organizationId: orgId, standard: 'SARLAFT' });
-      const [type] = await adminSql`
-        SELECT id FROM public.counterparty_types
-        WHERE organization_id = ${orgId} AND configuration_version_id = ${newDraft.versionId} LIMIT 1
-      `;
-      await addRequirement({
-        organizationId: orgId,
-        configurationVersionId: newDraft.versionId,
-        counterpartyTypeId: type.id,
-        standard: 'SARLAFT',
-        type: 'document_type',
-        key: 'doc_discr',
-        mandatory: 'always',
-        blocking: true,
-        validity: { mode: 'duration_from_issued', durationDays: 30 },
-      });
-      await publishDraftConfiguration({
-        organizationId: orgId,
-        versionId: newDraft.versionId,
-        publishedBy: adminUserId,
-        reason: 'Test HU-021',
-      });
-
       // Subir documento
       const vencido = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const confirmRes = await confirmDocumentUpload({
         organizationId: orgId,
-        dossierId,
+        dossierId: testDossierId,
         documentType: 'doc_discr',
         storagePath: testPath,
         hash: validated.hash,
@@ -972,8 +962,8 @@ describe('HU-013: Carga de los documentos exigidos', () => {
       });
 
       // Crear una discrepancia abierta sobre issued_at
-      const [party] = await adminSql`
-        SELECT party_id FROM public.dossiers WHERE id = ${dossierId}
+      const [dossierData] = await adminSql`
+        SELECT party_id, configuration_version_id FROM public.dossiers WHERE id = ${testDossierId}
       `;
       await adminSql`
         INSERT INTO public.assertions (
@@ -981,17 +971,17 @@ describe('HU-013: Carga de los documentos exigidos', () => {
           field, value, origin, produced_by, produced_at, evidence_id, confidence,
           ai_execution_id, ai_model_metadata, is_pending_validation, created_at
         ) VALUES (
-          gen_random_uuid(), ${orgId}, ${dossierId}, ${party.party_id}, ${configVersionId},
+          gen_random_uuid(), ${orgId}, ${testDossierId}, ${dossierData.party_id}, ${dossierData.configuration_version_id},
           ${'document:doc_discr:issued_at'}, ${'2025-01-01'}, 'extracted', NULL, now(), ${confirmRes.id}, NULL,
           NULL, NULL, true, now()
         )
       `;
 
       // Evaluar vigencias
-      const result = await evaluateDocumentExpirations(orgId, dossierId);
+      const result = await evaluateDocumentExpirations(orgId, testDossierId);
 
       // Verificar que el documento SIGUE en su estado anterior (not expired)
-      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const latest = await getLatestDocumentsForDossier(orgId, testDossierId);
       const discrDoc = latest.find((d) => d.documentType === 'doc_discr');
       expect(discrDoc?.state).not.toBe('expired');
       expect(result.expiredDocumentIds).not.toContain(discrDoc?.id);
@@ -999,8 +989,10 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
     it('evaluateDocumentExpirations sin vigencia: nunca transiciona', async () => {
       const adminStorage = createSupabaseAdminClient();
+      const testDossierId = await createTestDossierWithConfig('doc_no_val');
+
       const testPdfContent = Buffer.from('%PDF-1.4 No validity');
-      const testPath = `${dossierId}/doc_no_val/no-val-1.pdf`;
+      const testPath = `${testDossierId}/doc_no_val/no-val-1.pdf`;
       createdStoragePaths.push(testPath);
 
       await adminStorage.storage
@@ -1009,35 +1001,11 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
       const validated = await readAndValidateUploadedFile(testPath);
 
-      // Crear draft nuevo para agregar requisito SIN vigencia
-      const newDraft = await createDraftConfiguration({ organizationId: orgId, standard: 'SARLAFT' });
-      const [type] = await adminSql`
-        SELECT id FROM public.counterparty_types
-        WHERE organization_id = ${orgId} AND configuration_version_id = ${newDraft.versionId} LIMIT 1
-      `;
-      await addRequirement({
-        organizationId: orgId,
-        configurationVersionId: newDraft.versionId,
-        counterpartyTypeId: type.id,
-        standard: 'SARLAFT',
-        type: 'document_type',
-        key: 'doc_no_val',
-        mandatory: 'always',
-        blocking: true,
-        // Sin validity
-      });
-      await publishDraftConfiguration({
-        organizationId: orgId,
-        versionId: newDraft.versionId,
-        publishedBy: adminUserId,
-        reason: 'Test HU-021',
-      });
-
       // Subir documento con fecha muy antigua
       const ancient = '1800-01-01';
       await confirmDocumentUpload({
         organizationId: orgId,
-        dossierId,
+        dossierId: testDossierId,
         documentType: 'doc_no_val',
         storagePath: testPath,
         hash: validated.hash,
@@ -1048,10 +1016,10 @@ describe('HU-013: Carga de los documentos exigidos', () => {
       });
 
       // Evaluar vigencias
-      const result = await evaluateDocumentExpirations(orgId, dossierId);
+      const result = await evaluateDocumentExpirations(orgId, testDossierId);
 
       // Verificar que el documento sigue en received
-      const latest = await getLatestDocumentsForDossier(orgId, dossierId);
+      const latest = await getLatestDocumentsForDossier(orgId, testDossierId);
       const noValDoc = latest.find((d) => d.documentType === 'doc_no_val');
       expect(noValDoc?.state).toBe('received');
       expect(result.expiredDocumentIds).not.toContain(noValDoc?.id);
