@@ -14,6 +14,8 @@ import {
   AlertDialogDescription,
   AlertDialogTitle,
   AlertDialogAction,
+  AlertDialogHeader,
+  AlertDialogFooter,
 } from '@/components/ui/alert-dialog';
 import {
   KeyRound,
@@ -303,11 +305,13 @@ export function AccessLinkBox({
       {/* Revoke Confirmation Dialog */}
       <AlertDialog open={isRevokeConfirmOpen} onOpenChange={setIsRevokeConfirmOpen}>
         <AlertDialogContent>
-          <AlertDialogTitle>Revocar enlace de acceso</AlertDialogTitle>
-          <AlertDialogDescription>
-            ¿Está seguro de que desea revocar el enlace de acceso? La contraparte ya no podrá acceder con este enlace.
-          </AlertDialogDescription>
-          <div className="flex justify-end gap-3">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revocar enlace de acceso</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Está seguro de que desea revocar el enlace de acceso? La contraparte ya no podrá acceder con este enlace.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
@@ -323,7 +327,7 @@ export function AccessLinkBox({
                 'Revocar enlace'
               )}
             </AlertDialogAction>
-          </div>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>

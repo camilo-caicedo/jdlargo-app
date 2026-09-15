@@ -50,24 +50,20 @@ export function ReconciliationRowActions({
 }: ReconciliationRowActionsProps) {
   const router = useRouter();
   const [confirmPending, setConfirmPending] = useState(false);
-  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const [discardOpen, setDiscardOpen] = useState(false);
   const [discardReason, setDiscardReason] = useState('');
   const [discardPending, setDiscardPending] = useState(false);
-  const [discardError, setDiscardError] = useState<string | null>(null);
 
   const [correctOpen, setCorrectOpen] = useState(false);
   const [correctValue, setCorrectValue] = useState('');
   const [correctReason, setCorrectReason] = useState('');
   const [correctPending, setCorrectPending] = useState(false);
-  const [correctError, setCorrectError] = useState<string | null>(null);
 
   const [resolveOpen, setResolveOpen] = useState(false);
   const [selectedAssertionId, setSelectedAssertionId] = useState<string | null>(null);
   const [resolveReason, setResolveReason] = useState('');
   const [resolvePending, setResolvePending] = useState(false);
-  const [resolveError, setResolveError] = useState<string | null>(null);
 
   const formatTimeAgo = (dateStr: string): string => {
     const date = new Date(dateStr);
@@ -107,7 +103,7 @@ export function ReconciliationRowActions({
       setDiscardReason('');
       router.refresh();
     } catch (err) {
-      setDiscardError(err instanceof Error ? err.message : 'Error al descartar');
+      toast.error(err instanceof Error ? err.message : 'Error al descartar');
     } finally {
       setDiscardPending(false);
     }
@@ -134,7 +130,7 @@ export function ReconciliationRowActions({
       setCorrectReason('');
       router.refresh();
     } catch (err) {
-      setCorrectError(err instanceof Error ? err.message : 'Error al corregir');
+      toast.error(err instanceof Error ? err.message : 'Error al corregir');
     } finally {
       setCorrectPending(false);
     }
@@ -151,7 +147,7 @@ export function ReconciliationRowActions({
       setResolveReason('');
       router.refresh();
     } catch (err) {
-      setResolveError(err instanceof Error ? err.message : 'Error al resolver discrepancia');
+      toast.error(err instanceof Error ? err.message : 'Error al resolver discrepancia');
     } finally {
       setResolvePending(false);
     }

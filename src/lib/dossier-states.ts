@@ -11,7 +11,9 @@ export enum DossierState {
   IN_REVIEW = 'en_revision',
   PENDING_DECISION = 'pendiente_de_decision',
   APPROVED = 'aprobada',
+  APPROVED_WITH_CONDITIONS = 'aprobada_con_condiciones',
   REJECTED = 'rechazada',
+  REJECTED_BY_COUNTERPARTY = 'rechazada_por_contraparte',
   CLOSED = 'cerrada',
   EXPIRED_PENDING = 'expirado_pendiente',
 }
@@ -24,7 +26,9 @@ export const DOSSIER_STATE_LABELS: Record<DossierState, string> = {
   [DossierState.IN_REVIEW]: 'En revisión',
   [DossierState.PENDING_DECISION]: 'Pendiente de decisión',
   [DossierState.APPROVED]: 'Aprobada',
+  [DossierState.APPROVED_WITH_CONDITIONS]: 'Aprobada con condiciones',
   [DossierState.REJECTED]: 'Rechazada',
+  [DossierState.REJECTED_BY_COUNTERPARTY]: 'Rechazada por contraparte',
   [DossierState.CLOSED]: 'Cerrada',
   [DossierState.EXPIRED_PENDING]: 'Expirado / Pendiente',
 };
@@ -68,10 +72,20 @@ export const DOSSIER_STATE_COLORS: Record<
     text: 'text-emerald-700 dark:text-emerald-300',
     border: 'border-emerald-200/50 dark:border-emerald-800/40',
   },
+  [DossierState.APPROVED_WITH_CONDITIONS]: {
+    bg: 'bg-amber-50 dark:bg-amber-950/40',
+    text: 'text-amber-700 dark:text-amber-300',
+    border: 'border-amber-200/50 dark:border-amber-800/40',
+  },
   [DossierState.REJECTED]: {
     bg: 'bg-red-50 dark:bg-red-950/40',
     text: 'text-red-700 dark:text-red-300',
     border: 'border-red-200/50 dark:border-red-800/40',
+  },
+  [DossierState.REJECTED_BY_COUNTERPARTY]: {
+    bg: 'bg-rose-50 dark:bg-rose-950/40',
+    text: 'text-rose-700 dark:text-rose-300',
+    border: 'border-rose-200/50 dark:border-rose-800/40',
   },
   [DossierState.CLOSED]: {
     bg: 'bg-slate-50 dark:bg-slate-950/40',

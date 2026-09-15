@@ -38,7 +38,7 @@ export function InviteMemberForm({ organizationId, roles }: InviteMemberFormProp
       toast.success(state.message);
       formRef.current?.reset();
     }
-  }, [state?.success]);
+  }, [state?.success, state?.message]);
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const invitationUrl = state?.rawToken ? `${origin}/invitaciones/${state.rawToken}` : '';

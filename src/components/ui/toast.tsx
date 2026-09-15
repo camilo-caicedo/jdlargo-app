@@ -5,8 +5,10 @@ import { Toast as ToastPrimitive } from "@base-ui/react/toast"
 import { cn } from "cn"
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from "lucide-react"
 
+type ToastManagerType = React.ComponentProps<typeof ToastPrimitive.Provider>['toastManager']
+
 interface ToastProps extends React.PropsWithChildren {
-  toastManager: { add: (toastData: { type: string; title?: string; description?: string }) => void }
+  toastManager: ToastManagerType
 }
 
 function Toast({ toastManager, ...props }: ToastProps) {
@@ -43,7 +45,7 @@ function ToastRoot({ className, ...props }: ToastPrimitive.Root.Props) {
       ? 'text-rose-600 dark:text-rose-400'
       : isWarning
         ? 'text-amber-600 dark:text-amber-400'
-        : 'text-indigo-600 dark:text-indigo-400'
+        : 'text-primary'
 
   const bgClass = isSuccess
     ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200/50 dark:border-emerald-800/40'
@@ -51,7 +53,7 @@ function ToastRoot({ className, ...props }: ToastPrimitive.Root.Props) {
       ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200/50 dark:border-rose-800/40'
       : isWarning
         ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/50 dark:border-amber-800/40'
-        : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200/50 dark:border-indigo-800/40'
+        : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200/50 dark:border-blue-800/40'
 
   const textClass = isSuccess
     ? 'text-emerald-900 dark:text-emerald-100'
@@ -59,7 +61,7 @@ function ToastRoot({ className, ...props }: ToastPrimitive.Root.Props) {
       ? 'text-rose-900 dark:text-rose-100'
       : isWarning
         ? 'text-amber-900 dark:text-amber-100'
-        : 'text-indigo-900 dark:text-indigo-100'
+        : 'text-blue-900 dark:text-blue-100'
 
   return (
     <ToastPrimitive.Root
