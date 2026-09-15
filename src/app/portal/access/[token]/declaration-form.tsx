@@ -19,6 +19,7 @@ import {
   isRequirementCurrentlyRequired,
   validateFieldValue,
 } from '@/lib/requirement-evaluation';
+import { areValuesEqual } from '@/lib/value-comparison';
 import {
   saveDeclaredFieldsAction,
   completeDeclarationAction,
@@ -51,38 +52,48 @@ interface DeclarationFormProps {
   correctionsReason?: string | null;
 }
 
+function isEmptyValue(v: unknown): boolean {
+  return v === undefined || v === null || v === '';
+}
+
 export function DeclarationForm({
   token,
   dossierId,
   organizationId,
   fieldRequirements,
   values: initialValues,
-  suggestions: initialSuggestions = {},
+  suggestions = {},
   correctionsReason,
 }: DeclarationFormProps) {
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>(() => {
     const initial = { ...initialValues };
-    // Seed formValues with suggestions for fields without declared values
-    for (const [field, suggestion] of Object.entries(initialSuggestions)) {
-      if (!(field in initial)) {
+    for (const [field, suggestion] of Object.entries(suggestions)) {
+      if (isEmptyValue(initial[field])) {
         initial[field] = suggestion.value;
       }
     }
     return initial;
   });
   const [dirtyKeys, setDirtyKeys] = React.useState<Set<string>>(() => {
-    // Fields with suggestions but no declared values should be marked dirty from the start
-    // so they get saved when the user saves progress
     const initial = new Set<string>();
-    for (const field of Object.keys(initialSuggestions)) {
-      if (!(field in initialValues)) {
+    for (const field of Object.keys(suggestions)) {
+      if (isEmptyValue(initialValues[field])) {
         initial.add(field);
       }
     }
     return initial;
   });
-  const [suggestedKeys, setSuggestedKeys] = React.useState<Set<string>>(
-    new Set(Object.keys(initialSuggestions)),
+  const [suggestedKeys, setSuggestedKeys] = React.useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    for (const field of Object.keys(suggestions)) {
+      if (isEmptyValue(initialValues[field])) {
+        initial.add(field);
+      }
+    }
+    return initial;
+  });
+  const [highlightedFields, setHighlightedFields] = React.useState<Set<string>>(
+    () => new Set(Object.keys(suggestions).filter((field) => isEmptyValue(initialValues[field]))),
   );
   const [hiddenConflicts, setHiddenConflicts] = React.useState<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
@@ -94,6 +105,67 @@ export function DeclarationForm({
   const [generalError, setGeneralError] = React.useState<string | null>(null);
 
   const fieldRefs = React.useRef<Record<string, HTMLElement | null>>({});
+
+  // prevSuggestions guarda también el assertionId de la última sugerencia procesada por
+  // campo, para distinguir "llegó una extracción nueva" de "el padre se re-renderizó pero
+  // la sugerencia es la misma" — sin usar un ref (no se puede leer/escribir un ref durante
+  // el render).
+  const [prevSuggestions, setPrevSuggestions] = React.useState(suggestions);
+
+  // Reconcilia sugerencias nuevas (tras un router.refresh() del padre, p. ej. después de
+  // analizar un documento con IA) SIN pisar nada que la contraparte ya haya escrito o
+  // guardado — esto es lo que se reportó roto: un remount por key perdía cambios sin
+  // guardar. Un campo vacío se autocompleta; un campo con algo (declarado, ya aceptado, o
+  // tecleado sin guardar todavía) nunca se sobreescribe solo — a lo sumo se reabre el aviso
+  // de conflicto si la nueva sugerencia difiere de lo que hay. Se ajusta durante el render
+  // (patrón oficial de React para derivar estado de props) en vez de en un efecto, para no
+  // depender de una copia en un ref de formValues.
+  if (suggestions !== prevSuggestions) {
+    setPrevSuggestions(suggestions);
+
+    const nextFormValues = { ...formValues };
+    const nextDirty = new Set(dirtyKeys);
+    const nextSuggested = new Set(suggestedKeys);
+    const nextHighlighted = new Set(highlightedFields);
+    const nextHidden = new Set(hiddenConflicts);
+    let changed = false;
+
+    for (const [field, suggestion] of Object.entries(suggestions)) {
+      if (prevSuggestions[field]?.assertionId === suggestion.assertionId) {
+        continue; // misma sugerencia de siempre, nada que reconciliar
+      }
+
+      if (isEmptyValue(formValues[field])) {
+        nextFormValues[field] = suggestion.value;
+        nextDirty.add(field);
+        nextSuggested.add(field);
+        nextHighlighted.add(field);
+        changed = true;
+      } else if (nextHidden.has(field)) {
+        // Ya hay un valor (guardado o sin guardar). No se toca. Si antes se había
+        // descartado un conflicto para este campo, se reabre porque la sugerencia cambió.
+        nextHidden.delete(field);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setFormValues(nextFormValues);
+      setDirtyKeys(nextDirty);
+      setSuggestedKeys(nextSuggested);
+      setHighlightedFields(nextHighlighted);
+      setHiddenConflicts(nextHidden);
+    }
+  }
+
+  // Fade out highlight: al montar y cada vez que se agregan campos resaltados nuevos.
+  React.useEffect(() => {
+    if (highlightedFields.size === 0) return;
+    const timer = setTimeout(() => {
+      setHighlightedFields(new Set());
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [highlightedFields]);
 
   const handleValueChange = (key: string, value: unknown) => {
     setFormValues((prev) => ({ ...prev, [key]: value }));
@@ -274,6 +346,13 @@ export function DeclarationForm({
             const err = fieldErrors[req.key];
             const labelText = req.key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 
+            const suggestion = suggestions[req.key];
+            const hasConflict =
+              !!suggestion &&
+              !isEmptyValue(currentVal) &&
+              !areValuesEqual(currentVal, suggestion.value) &&
+              !hiddenConflicts.has(req.key);
+
             const isFullWidth = req.validation?.dataType === 'string' && (req.key.includes('address') || req.key.includes('direccion') || req.key.includes('observacion') || req.key.includes('description'));
             return (
               <div
@@ -281,7 +360,11 @@ export function DeclarationForm({
                 ref={(el) => {
                   fieldRefs.current[req.key] = el;
                 }}
-                className={`space-y-1.5 p-3 rounded-lg bg-zinc-50/50 dark:bg-zinc-900/30 border border-zinc-100 dark:border-zinc-800/80 transition-colors ${
+                className={`space-y-1.5 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800/80 transition-colors duration-[3000ms] ${
+                  highlightedFields.has(req.key) && suggestedKeys.has(req.key)
+                    ? 'bg-purple-50 dark:bg-purple-950/20'
+                    : 'bg-zinc-50/50 dark:bg-zinc-900/30'
+                } ${
                   isFullWidth ? 'md:col-span-2' : ''
                 }`}
               >
@@ -383,53 +466,52 @@ export function DeclarationForm({
                 )}
 
                 {/* Suggestion badge for fields pre-filled from AI extraction */}
-                {suggestedKeys.has(req.key) && !(req.key in initialValues) && (
+                {suggestedKeys.has(req.key) && (
                   <div className="flex items-center gap-1 text-[11px] text-sky-600 dark:text-sky-400 mt-1">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>Sugerido por tu documento — verifica</span>
                   </div>
                 )}
 
-                {/* Conflict warning for fields with both declared and extracted values */}
-                {initialSuggestions[req.key] &&
-                  req.key in initialValues &&
-                  !hiddenConflicts.has(req.key) && (
-                    <div className="p-2.5 mt-2 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-800 dark:text-amber-300 space-y-2">
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-semibold">
-                            Tu documento dice: &quot;{String(initialSuggestions[req.key].value)}&quot; — tú
-                            declaraste &quot;{String(currentVal)}&quot;.
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 justify-end">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            setHiddenConflicts((prev) => new Set(prev).add(req.key));
-                          }}
-                        >
-                          Mantener lo que declaré
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
-                          onClick={() => {
-                            handleValueChange(req.key, initialSuggestions[req.key].value);
-                            setHiddenConflicts((prev) => new Set(prev).add(req.key));
-                          }}
-                        >
-                          Usar el valor del documento
-                        </Button>
+                {/* Conflict warning: hay un valor actual (guardado o sin guardar) que
+                    difiere de lo que dice el documento recién analizado. */}
+                {hasConflict && (
+                  <div className="p-2.5 mt-2 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-800 dark:text-amber-300 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">
+                          Tu documento dice: &quot;{String(suggestion!.value)}&quot; — tú
+                          declaraste &quot;{String(currentVal)}&quot;.
+                        </p>
                       </div>
                     </div>
-                  )}
+                    <div className="flex items-center gap-2 justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setHiddenConflicts((prev) => new Set(prev).add(req.key));
+                        }}
+                      >
+                        Mantener lo que declaré
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                        onClick={() => {
+                          handleValueChange(req.key, suggestion!.value);
+                          setHiddenConflicts((prev) => new Set(prev).add(req.key));
+                        }}
+                      >
+                        Usar el valor del documento
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Validation or missing field alert */}
                 {isMissing && (

@@ -12,7 +12,7 @@ import {
   getLatestDeclaredValuesForDossier,
   getActiveAssertionsForDossier,
 } from '../assertions/service';
-import { areValuesEqual } from '../reconciliation/service';
+import { areValuesEqual } from '@/lib/value-comparison';
 import { executeTransition } from './state-machine';
 import { getLatestDocumentsForDossier } from '../documents/document';
 

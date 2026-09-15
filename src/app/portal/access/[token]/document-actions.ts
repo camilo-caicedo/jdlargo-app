@@ -64,7 +64,7 @@ export async function confirmDocumentUploadAction(
   declaredIssuer?: string,
   issuedAt?: string,
   expiresAt?: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; documentId?: string; error?: string }> {
   try {
     if (!(await verifyTokenGrantsAccess(token, dossierId, organizationId))) {
       return { success: false, error: 'El enlace de acceso no es válido para este expediente' };
@@ -107,26 +107,45 @@ export async function confirmDocumentUploadAction(
       },
     );
 
-    // 3. Fire non-blocking extraction if this is a new document (not deduplicated)
-    if (!uploadResult.deduplicated) {
-      try {
-        await runDocumentExtraction({
-          organizationId,
-          dossierId,
-          documentId: uploadResult.id,
-        });
-      } catch (err) {
-        console.warn('[confirmDocumentUploadAction] Extracción falló, no bloquea la subida:', err);
-      }
-    }
-
     revalidatePath(`/portal/access/${token}`);
-    return { success: true };
+    return { success: true, documentId: uploadResult.id };
   } catch (error) {
     console.error('[confirmDocumentUploadAction] Error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Error al confirmar la subida del documento',
+    };
+  }
+}
+
+export async function analyzeDocumentAction(
+  token: string,
+  dossierId: string,
+  organizationId: string,
+  documentId: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!(await verifyTokenGrantsAccess(token, dossierId, organizationId))) {
+      return { success: false, error: 'El enlace de acceso no es válido para este expediente' };
+    }
+
+    try {
+      await runDocumentExtraction({
+        organizationId,
+        dossierId,
+        documentId,
+      });
+    } catch (err) {
+      console.warn('[analyzeDocumentAction] Extracción falló, no bloquea:', err);
+    }
+
+    revalidatePath(`/portal/access/${token}`);
+    return { success: true };
+  } catch (error) {
+    console.error('[analyzeDocumentAction] Error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Error al analizar el documento',
     };
   }
 }

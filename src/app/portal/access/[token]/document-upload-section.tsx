@@ -16,8 +16,10 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import {
   requestDocumentUploadUrlAction,
   confirmDocumentUploadAction,
+  analyzeDocumentAction,
   getPortalDocumentDownloadUrlAction,
 } from './document-actions';
+import { useRouter } from 'next/navigation';
 import {
   FileText,
   Upload,
@@ -28,6 +30,7 @@ import {
   Clock,
   Calendar,
   Building,
+  Bot,
 } from 'lucide-react';
 
 export interface DocumentSummaryDTO {
@@ -58,11 +61,13 @@ export function DocumentUploadSection({
   const [documents, setDocuments] = React.useState<DocumentSummaryDTO[]>(initialDocuments);
 
   // Per-requirement upload states
+  const router = useRouter();
+
   const [uploadState, setUploadState] = React.useState<
     Record<
       string,
       {
-        status: 'idle' | 'requesting' | 'uploading' | 'confirming' | 'success' | 'error';
+        status: 'idle' | 'requesting' | 'uploading' | 'confirming' | 'analyzing' | 'success' | 'error';
         error?: string;
         fileName?: string;
       }
@@ -197,6 +202,14 @@ export function DocumentUploadSection({
         return;
       }
 
+      // 5. Trigger AI analysis
+      setUploadState((prev) => ({
+        ...prev,
+        [reqKey]: { status: 'analyzing', fileName: file.name },
+      }));
+
+      await analyzeDocumentAction(token, dossierId, organizationId, confirmRes.documentId!);
+
       setUploadState((prev) => ({
         ...prev,
         [reqKey]: { status: 'success', fileName: file.name },
@@ -217,6 +230,8 @@ export function DocumentUploadSection({
           },
         ];
       });
+
+      router.refresh();
     } catch (err) {
       setUploadState((prev) => ({
         ...prev,
@@ -263,7 +278,8 @@ export function DocumentUploadSection({
           const isLoading =
             state.status === 'requesting' ||
             state.status === 'uploading' ||
-            state.status === 'confirming';
+            state.status === 'confirming' ||
+            state.status === 'analyzing';
 
           return (
             <div
@@ -441,12 +457,23 @@ export function DocumentUploadSection({
                 </div>
 
                 {isLoading && (
-                  <div className="flex items-center gap-1.5 text-xs text-sky-600 dark:text-sky-400">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <div
+                    className={`flex items-center gap-1.5 text-xs ${
+                      state.status === 'analyzing'
+                        ? 'text-purple-600 dark:text-purple-400'
+                        : 'text-sky-600 dark:text-sky-400'
+                    }`}
+                  >
+                    {state.status === 'analyzing' ? (
+                      <Bot className="w-3.5 h-3.5 animate-pulse" />
+                    ) : (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    )}
                     <span>
                       {state.status === 'requesting' && 'Solicitando subida...'}
                       {state.status === 'uploading' && 'Subiendo archivo...'}
-                      {state.status === 'confirming' && 'Subiendo y analizando documento...'}
+                      {state.status === 'confirming' && 'Verificando archivo...'}
+                      {state.status === 'analyzing' && 'Analizando con IA — buscando datos para tu formulario...'}
                     </span>
                   </div>
                 )}

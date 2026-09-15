@@ -3,42 +3,10 @@ import { getActiveAssertionsForDossier, type AssertionDetail } from '../assertio
 import { getDossierPendingRequirements } from '../dossiers/dossier';
 import { isRequirementCurrentlyRequired } from '@/lib/requirement-evaluation';
 
-/**
- * Normalizes a value for comparison.
- * Strings: trims whitespace, collapses internal whitespace, converts to lowercase, strips accents.
- * Any other type (number, boolean, object, null, undefined): returned as-is.
- * (HU-019 §2 / Reglas de negocio)
- */
-export function normalizeValue(val: unknown): unknown {
-  if (typeof val === 'string') {
-    return val
-      .trim()
-      .replace(/\s+/g, ' ')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-  }
-  return val;
-}
-
-/**
- * Checks equality between two values using structural comparison,
- * with string normalization applied.
- */
-export function areValuesEqual(a: unknown, b: unknown): boolean {
-  const normA = normalizeValue(a);
-  const normB = normalizeValue(b);
-
-  if (normA === normB) {
-    return true;
-  }
-
-  if (typeof normA === 'object' && normA !== null && typeof normB === 'object' && normB !== null) {
-    return JSON.stringify(normA) === JSON.stringify(normB);
-  }
-
-  return false;
-}
+// normalizeValue/areValuesEqual viven en src/lib/value-comparison.ts (sin dependencias de
+// servidor) para poder reutilizarlas tambien desde componentes cliente del portal.
+import { normalizeValue, areValuesEqual } from '@/lib/value-comparison';
+export { normalizeValue, areValuesEqual };
 
 export interface OpenDiscrepancy {
   field: string;

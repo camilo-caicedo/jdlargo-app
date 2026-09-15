@@ -238,6 +238,13 @@ export default async function PortalAccessPage({
 
     return (
       <div className="w-full space-y-6">
+        <DocumentUploadSection
+          token={token}
+          dossierId={result.dossierId}
+          organizationId={result.organizationId}
+          documentRequirements={formData.documentRequirements}
+          initialDocuments={initialDocsDTO}
+        />
         <DeclarationForm
           token={token}
           dossierId={result.dossierId}
@@ -247,13 +254,6 @@ export default async function PortalAccessPage({
           values={formData.values}
           suggestions={formData.suggestions}
           correctionsReason={correctionsReason}
-        />
-        <DocumentUploadSection
-          token={token}
-          dossierId={result.dossierId}
-          organizationId={result.organizationId}
-          documentRequirements={formData.documentRequirements}
-          initialDocuments={initialDocsDTO}
         />
       </div>
     );
