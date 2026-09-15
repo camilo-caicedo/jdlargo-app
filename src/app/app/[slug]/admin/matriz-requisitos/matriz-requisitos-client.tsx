@@ -10,6 +10,15 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Plus, AlertCircle, Layers, FileText, CheckCircle2 } from "lucide-react";
 import { addCounterpartyTypeAction, addRequirementAction } from "./actions";
 import { createDraftFromRolesAction } from "../roles/actions";
+import { getDocumentTypeOptions, isDocumentTypeSupported } from "@/lib/document-type-catalog";
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxContent,
+  ComboboxList,
+  ComboboxItem,
+  ComboboxEmpty,
+} from "@/components/ui/combobox";
 
 interface RequirementItem {
   requirementId: string;
@@ -62,6 +71,14 @@ export function MatrizRequisitosClient({
   const [reqKey, setReqKey] = useState("");
   const [reqMandatory, setReqMandatory] = useState<"always" | "conditional" | "optional">("always");
   const [reqBlocking, setReqBlocking] = useState(true);
+  const [documentTypeWarning, setDocumentTypeWarning] = useState<string | null>(null);
+
+  // Combobox state for document types
+  const CUSTOM_DOC_TYPE = "__custom__";
+  const documentTypeOptions = getDocumentTypeOptions();
+  const documentTypeItems = [...documentTypeOptions, { value: CUSTOM_DOC_TYPE, label: "Otro (personalizado)", description: "Define un tipo de documento no en el catálogo" }];
+  const selectedDocType = documentTypeOptions.find((d) => d.value === reqKey) || (reqKey === CUSTOM_DOC_TYPE ? documentTypeItems[documentTypeItems.length - 1] : null);
+  const isCustomDocType = reqKey === CUSTOM_DOC_TYPE || (reqKey && !isDocumentTypeSupported(reqKey));
 
   async function handleCreateDraft() {
     setIsPending(true);
@@ -309,13 +326,80 @@ export function MatrizRequisitosClient({
 
                         <div className="space-y-1">
                           <Label className="text-xs">Clave / Identificador</Label>
-                          <Input
-                            placeholder="ej. rut, camara_comercio"
-                            className="h-8 text-xs"
-                            value={reqKey}
-                            onChange={(e) => setReqKey(e.target.value)}
-                            required
-                          />
+                          {reqType === "document_type" ? (
+                            <div className="space-y-1">
+                              <Combobox
+                                items={documentTypeItems}
+                                value={selectedDocType}
+                                onValueChange={(val) => {
+                                  if (val) {
+                                    if (val.value === CUSTOM_DOC_TYPE) {
+                                      setReqKey(CUSTOM_DOC_TYPE);
+                                      setDocumentTypeWarning(null);
+                                    } else {
+                                      setReqKey(val.value);
+                                      if (!isDocumentTypeSupported(val.value)) {
+                                        setDocumentTypeWarning("Este tipo no está en el catálogo de tipos soportados por IA y se procesará manualmente.");
+                                      } else {
+                                        setDocumentTypeWarning(null);
+                                      }
+                                    }
+                                  }
+                                }}
+                                itemToStringLabel={(item) => item?.label ?? ""}
+                                isItemEqualToValue={(a, b) => a?.value === b?.value}
+                                disabled={isPending}
+                              >
+                                <ComboboxInput placeholder="Seleccionar tipo de documento..." />
+                                <ComboboxContent>
+                                  <ComboboxEmpty>No se encontraron tipos.</ComboboxEmpty>
+                                  <ComboboxList>
+                                    {(item: typeof documentTypeItems[0]) => (
+                                      <ComboboxItem key={item.value} value={item}>
+                                        <div className="flex flex-col gap-0.5">
+                                          <span>{item.label}</span>
+                                          {item.description && (
+                                            <span className="text-xs text-muted-foreground">{item.description}</span>
+                                          )}
+                                        </div>
+                                      </ComboboxItem>
+                                    )}
+                                  </ComboboxList>
+                                </ComboboxContent>
+                              </Combobox>
+                              {isCustomDocType && (
+                                <Input
+                                  placeholder="ej. doc_licencia_conduccion, doc_certificado_bancario"
+                                  className="h-8 text-xs mt-1"
+                                  value={reqKey === CUSTOM_DOC_TYPE ? "" : reqKey}
+                                  onChange={(e) => {
+                                    const newKey = e.target.value;
+                                    setReqKey(newKey);
+                                    if (newKey && !isDocumentTypeSupported(newKey)) {
+                                      setDocumentTypeWarning("Este tipo no está en el catálogo de tipos soportados por IA y se procesará manualmente.");
+                                    } else {
+                                      setDocumentTypeWarning(null);
+                                    }
+                                  }}
+                                  required={isCustomDocType}
+                                />
+                              )}
+                              {documentTypeWarning && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400">{documentTypeWarning}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <Input
+                              placeholder="ej. rut, camara_comercio"
+                              className="h-8 text-xs"
+                              value={reqKey}
+                              onChange={(e) => {
+                                setReqKey(e.target.value);
+                                setDocumentTypeWarning(null);
+                              }}
+                              required
+                            />
+                          )}
                         </div>
 
                         <div className="space-y-1">

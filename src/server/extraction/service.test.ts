@@ -133,12 +133,14 @@ class MockExtractionEngine implements ExtractionEngine {
   readonly id = 'mock-extraction-engine';
   public lastInput?: ExtractionEngineInput;
   public mockResult?: ExtractionEngineResult;
+  public callCount = 0;
 
   constructor(mockResult?: ExtractionEngineResult) {
     this.mockResult = mockResult;
   }
 
   async extract(input: ExtractionEngineInput): Promise<ExtractionEngineResult> {
+    this.callCount++;
     this.lastInput = input;
     if (this.mockResult) {
       return this.mockResult;
@@ -441,6 +443,9 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
   });
 
   it('Escenario: Lo extraído no desplaza a lo declarado', async () => {
+    // Reset document state to received for test isolation
+    await adminSql`UPDATE public.documents SET state = 'received', rejection_reason = null WHERE id = ${documentAlfaId}::uuid`;
+
     const partyId = (await adminSql`SELECT party_id FROM public.dossiers WHERE id = ${dossierAlfaId}::uuid`)[0].party_id;
     const configVerId = (await adminSql`SELECT configuration_version_id FROM public.dossiers WHERE id = ${dossierAlfaId}::uuid`)[0].configuration_version_id;
 
@@ -478,20 +483,19 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
     });
 
     expect(result.status).toBe('succeeded');
+    expect(result.assertionsCreated).toBe(1);
 
-    // Both assertions must be active simultaneously with their respective origins
+    // Both assertions must coexist with their respective origins
     const rsAssertions = await getAssertionsForField(orgAlfa.id, dossierAlfaId, 'razon_social');
-    const activeAssertions = rsAssertions.filter((a) => a.status === 'active');
-    
-    const declared = activeAssertions.find((a) => a.origin === 'declared' && a.value === 'Alfa Antigua S.A.S.');
-    const extracted = activeAssertions.find((a) => a.origin === 'extracted' && a.value === 'Alfa Nueva S.A.S.');
+    const declared = rsAssertions.find((a) => a.origin === 'declared' && a.value === 'Alfa Antigua S.A.S.');
+    const extracted = rsAssertions.find((a) => a.origin === 'extracted' && a.value === 'Alfa Nueva S.A.S.');
 
     expect(declared).toBeDefined();
     expect(extracted).toBeDefined();
-    expect(activeAssertions.length).toBeGreaterThanOrEqual(2);
-    // El sistema no elige ninguna por su cuenta: ambas siguen 'active'
+    // El sistema no elige ninguna por su cuenta: lo declarado sigue activo, lo extraído por IA
+    // nace pendiente de validación (HU-020) — ninguna desplaza a la otra.
     expect(declared?.status).toBe('active');
-    expect(extracted?.status).toBe('active');
+    expect(extracted?.status).toBe('pending_validation');
   });
 
   it('Escenario: Extracción con confianza insuficiente', async () => {
@@ -738,5 +742,63 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
     );
     expect(visibleInBeta.length).toBe(1);
     expect(visibleInBeta[0].id).toBe(betaExtracted.id);
+  });
+
+  it('Escenario: Tipo de documento no soportado no invoca al motor de IA', async () => {
+    // Create a requirement for an unsupported type first
+    const configVerAlfa = (await adminSql`SELECT configuration_version_id FROM public.dossiers WHERE id = ${dossierAlfaId}::uuid`)[0].configuration_version_id;
+    const counterpartyTypeAlfa = (await adminSql`SELECT counterparty_type_id FROM public.dossiers WHERE id = ${dossierAlfaId}::uuid`)[0].counterparty_type_id;
+
+    // Insert an unsupported type requirement
+    await adminSql`
+      INSERT INTO public.requirements (organization_id, configuration_version_id, counterparty_type_id, standard, type, key, mandatory, blocking, created_at)
+      VALUES (${orgAlfa.id}::uuid, ${configVerAlfa}::uuid, ${counterpartyTypeAlfa}::uuid, 'SARLAFT', 'document_type', 'doc_unsupported_type', 'always', true, NOW())
+    `;
+
+    // Upload document to storage
+    const adminStorage = createSupabaseAdminClient();
+    const fileBuffer = Buffer.from('test pdf content for unsupported type');
+    const storagePathUnsupported = `${dossierAlfaId}/unsupported/doc.pdf`;
+    createdStoragePaths.push(storagePathUnsupported);
+
+    const { error: uploadError } = await adminStorage.storage
+      .from(DOSSIER_DOCUMENTS_BUCKET)
+      .upload(storagePathUnsupported, fileBuffer, { contentType: 'application/pdf', upsert: true });
+    expect(uploadError).toBeNull();
+
+    // Confirm document with unsupported type
+    const unsupportedDoc = await confirmDocumentUpload({
+      organizationId: orgAlfa.id,
+      dossierId: dossierAlfaId,
+      documentType: 'doc_unsupported_type', // Not in catalog but in requirements
+      storagePath: storagePathUnsupported,
+      hash: 'abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567ijk890lmn',
+      format: 'pdf',
+      size: fileBuffer.length,
+      uploadedByType: 'user',
+      uploadedByUserId: adminAlfaId,
+    });
+
+    const mockEngine = new MockExtractionEngine();
+    const result = await runDocumentExtraction({
+      organizationId: orgAlfa.id,
+      dossierId: dossierAlfaId,
+      documentId: unsupportedDoc.id,
+      engine: mockEngine,
+    });
+
+    // Motor NUNCA fue invocado
+    expect(mockEngine.callCount).toBe(0);
+
+    // Resultado indica tipo no soportado
+    expect(result.status).toBe('unsupported_document_type');
+    expect(result.aiExecutionId).toBeNull();
+    expect(result.assertionsCreated).toBe(0);
+
+    // No hay fila en ai_executions
+    const [aiExec] = await adminSql`
+      SELECT id FROM public.ai_executions WHERE organization_id = ${orgAlfa.id}::uuid AND document_id = ${unsupportedDoc.id}::uuid
+    `;
+    expect(aiExec).toBeUndefined();
   });
 });

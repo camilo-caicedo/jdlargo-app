@@ -8,6 +8,7 @@ import { recordAiExecution } from '../ai/execution';
 import { registerAssertion } from '../assertions/service';
 import { markDocumentRequiresReview } from '../documents/document';
 import { getRequirementsForType } from '../configuration/requirement-matrix';
+import { isDocumentTypeSupported } from '@/lib/document-type-catalog';
 
 export interface RunDocumentExtractionInput {
   organizationId: string;
@@ -17,8 +18,8 @@ export interface RunDocumentExtractionInput {
 }
 
 export interface RunDocumentExtractionResult {
-  aiExecutionId: string;
-  status: 'succeeded' | 'failed';
+  aiExecutionId: string | null;
+  status: 'succeeded' | 'failed' | 'unsupported_document_type';
   assertionsCreated: number;
 }
 
@@ -48,6 +49,24 @@ export async function runDocumentExtraction(
 
   if (doc.state !== 'received') {
     throw new Error(`El documento no está en estado 'received' (estado actual: '${doc.state}')`);
+  }
+
+  // Guard: verificar que el tipo de documento está soportado por el motor de IA
+  if (!isDocumentTypeSupported(doc.documentType)) {
+    await markDocumentRequiresReview(
+      {
+        organizationId: input.organizationId,
+        dossierId: input.dossierId,
+        documentId: input.documentId,
+        reason: `Tipo de documento no soportado por IA: ${doc.documentType}`,
+      },
+      client,
+    );
+    return {
+      aiExecutionId: null,
+      status: 'unsupported_document_type',
+      assertionsCreated: 0,
+    };
   }
 
   // Carga expediente para obtener partyId, counterpartyTypeId y configurationVersionId
