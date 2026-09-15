@@ -11,8 +11,11 @@ const adminSql = postgres(process.env.DIRECT_URL || 'postgresql://postgres:postg
 let orgAlfaId: string;
 let orgBetaId: string;
 let dossierAlfaId: string;
+let dossierBetaId: string;
 let partyAlfaId: string;
+let partyBetaId: string;
 let configAlfaVersionId: string;
+let configBetaVersionId: string;
 let analystAlfaId: string;
 let analystBetaId: string;
 
@@ -113,8 +116,8 @@ beforeAll(async () => {
     role: 'compliance_analyst',
   });
 
-  // Get active configuration version
-  const cfg = await withTenantContext(
+  // Get active configuration versions
+  const cfgAlfa = await withTenantContext(
     { userId: adminAlfaId, organizationId: orgAlfaId },
     async (tx) => {
       return tx.query.configurationVersions.findFirst({
@@ -122,23 +125,49 @@ beforeAll(async () => {
       });
     },
   );
-  configAlfaVersionId = cfg?.id || '';
+  configAlfaVersionId = cfgAlfa?.id || '';
 
-  // Create party
-  const [party] = await adminSql`
+  const cfgBeta = await withTenantContext(
+    { userId: adminBetaId, organizationId: orgBetaId },
+    async (tx) => {
+      return tx.query.configurationVersions.findFirst({
+        where: (cv) => sql`${cv.organizationId} = ${orgBetaId}::uuid AND ${cv.status} = 'published'`,
+      });
+    },
+  );
+  configBetaVersionId = cfgBeta?.id || '';
+
+  // Create party Alfa
+  const [partyAlfa] = await adminSql`
     INSERT INTO public.parties (organization_id, identification_type, identification_number)
     VALUES (${orgAlfaId}::uuid, 'NIT', '850311111')
     RETURNING id
   `;
-  partyAlfaId = party.id;
+  partyAlfaId = partyAlfa.id;
 
-  // Create dossier
-  const [dossier] = await adminSql`
+  // Create dossier Alfa
+  const [dossierAlfa] = await adminSql`
     INSERT INTO public.dossiers (organization_id, code, state, party_id, configuration_version_id)
     VALUES (${orgAlfaId}::uuid, 'EXP-001', 'en_revision', ${partyAlfaId}::uuid, ${configAlfaVersionId}::uuid)
     RETURNING id
   `;
-  dossierAlfaId = dossier.id;
+  dossierAlfaId = dossierAlfa.id;
+
+  // Create party Beta
+  const [partyBeta] = await adminSql`
+    INSERT INTO public.parties (organization_id, identification_type, identification_number)
+    VALUES (${orgBetaId}::uuid, 'NIT', '860311111')
+    RETURNING id
+  `;
+  partyBetaId = partyBeta.id;
+
+  // Create dossier Beta
+  const [dossierBeta] = await adminSql`
+    INSERT INTO public.dossiers (organization_id, code, state, party_id, configuration_version_id)
+    VALUES (${orgBetaId}::uuid, 'EXP-002', 'en_revision', ${partyBetaId}::uuid, ${configBetaVersionId}::uuid)
+    RETURNING id
+  `;
+  dossierBetaId = dossierBeta.id;
 });
 
 afterEach(async () => {
@@ -296,6 +325,7 @@ describe('HU-020: Validación humana de lo extraído', () => {
   });
 
   it('Escenario: Validar exige permiso', async () => {
+    // Use analyst from Beta org (no permissions in Alfa org)
     const aiExecId = await helperRecordAiExecution(orgAlfaId, dossierAlfaId);
     const assertReg = await registerAssertion({
       organizationId: orgAlfaId,
@@ -310,40 +340,54 @@ describe('HU-020: Validación humana de lo extraído', () => {
       aiExecutionId: aiExecId,
     });
 
-    // User without dossier:review permission should fail
-    // (This is enforced by enforceUserPermission in validateExtractedAssertion)
-    // For now, test assumes permission check works via RLS; full test would need role setup
-    expect(assertReg.status).toBe('pending_validation');
+    // User without membership in Org Alfa should fail with permission error
+    const error = await validateExtractedAssertion({
+      organizationId: orgAlfaId,
+      dossierId: dossierAlfaId,
+      assertionId: assertReg.id,
+      result: 'confirmed',
+      validatedBy: analystBetaId,
+    }).catch((e) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain('dossier:review');
   });
 
   it('Escenario: Aislamiento entre organizaciones sobre la validación', async () => {
-    const aiExecId = await helperRecordAiExecution(orgAlfaId, dossierAlfaId);
-    const assertReg = await registerAssertion({
-      organizationId: orgAlfaId,
-      dossierId: dossierAlfaId,
-      partyId: partyAlfaId,
-      configurationVersionId: configAlfaVersionId,
+    // Create extracted assertion in Org Beta
+    const aiExecIdBeta = await helperRecordAiExecution(orgBetaId, dossierBetaId);
+    const assertBeta = await registerAssertion({
+      organizationId: orgBetaId,
+      dossierId: dossierBetaId,
+      partyId: partyBetaId,
+      configurationVersionId: configBetaVersionId,
       field: 'razon_social',
-      value: 'Transportes Alfa S.A.S.',
+      value: 'Transportes Beta S.A.S.',
       origin: 'extracted',
-      evidenceId: 'doc-001.pdf',
+      evidenceId: 'doc-beta.pdf',
       confidence: '0.95',
-      aiExecutionId: aiExecId,
+      aiExecutionId: aiExecIdBeta,
     });
 
-    // Try to validate with wrong organization should fail (caught by RLS)
-    try {
-      await validateExtractedAssertion({
-        organizationId: orgBetaId,
-        dossierId: dossierAlfaId,
-        assertionId: assertReg.id,
-        result: 'confirmed',
-        validatedBy: analystBetaId,
-      });
-      expect.fail('Should have rejected cross-org validation');
-    } catch (e) {
-      // Expected: RLS rejects the query or assertion not found
-      expect(e).toBeDefined();
-    }
+    // Analyst from Org Alfa with tenant context tries to validate Beta's assertion
+    // Should be rejected by RLS because assertion belongs to different organization
+    const error = await withTenantContext(
+      { userId: analystAlfaId, organizationId: orgAlfaId },
+      async (tx) => {
+        return validateExtractedAssertion(
+          {
+            organizationId: orgBetaId,
+            dossierId: dossierBetaId,
+            assertionId: assertBeta.id,
+            result: 'confirmed',
+            validatedBy: analystAlfaId,
+          },
+          tx,
+        ).catch((e) => e);
+      },
+    );
+
+    // Should fail: either RLS rejects or assertion not found in Alfa's context
+    expect(error).toBeInstanceOf(Error);
   });
 });
