@@ -1,3 +1,6 @@
+// TEMPORAL: jdlargo.com todavía no está verificado en Resend (https://resend.com/domains).
+// Mientras tanto, los remitentes usan el dominio de pruebas resend.dev (auto-verificado).
+// Revertir a @jdlargo.com en las 6 llamadas de abajo una vez el dominio real quede verificado.
 import { Resend } from 'resend';
 import { AccessLinkEmail } from './emails/access-link';
 import { OtpCodeEmail } from './emails/otp-code';
@@ -36,7 +39,7 @@ export async function sendAccessLinkEmail(input: SendAccessLinkEmailInput): Prom
 
   try {
     await resend.emails.send({
-      from: 'JD Largo <notificaciones@jdlargo.com>',
+      from: 'JD Largo <notificaciones@resend.dev>',
       to: input.to,
       subject: `Acceso a su expediente de debida diligencia (${input.dossierCode})`,
       react: AccessLinkEmail({
@@ -46,7 +49,7 @@ export async function sendAccessLinkEmail(input: SendAccessLinkEmailInput): Prom
       }),
     });
   } catch (error) {
-    console.error('[sendAccessLinkEmail] Error sending email via Resend:', error);
+    console.error('[sendAccessLinkEmail] Error sending email via Resend:', error instanceof Error ? error.message : error);
     // Best-effort: do not fail business operation if email provider is down
   }
 }
@@ -69,7 +72,7 @@ export async function sendOtpEmail(input: SendOtpEmailInput): Promise<void> {
 
   try {
     await resend.emails.send({
-      from: 'JD Largo <seguridad@jdlargo.com>',
+      from: 'JD Largo <seguridad@resend.dev>',
       to: input.to,
       subject: `Código de verificación para expediente ${input.dossierCode}`,
       react: OtpCodeEmail({
@@ -78,7 +81,7 @@ export async function sendOtpEmail(input: SendOtpEmailInput): Promise<void> {
       }),
     });
   } catch (error) {
-    console.error('[sendOtpEmail] Error sending OTP email via Resend:', error);
+    console.error('[sendOtpEmail] Error sending OTP email via Resend:', error instanceof Error ? error.message : error);
   }
 }
 
@@ -101,7 +104,7 @@ export async function sendInvitationEmail(input: SendInvitationEmailInput): Prom
 
   try {
     await resend.emails.send({
-      from: 'JD Largo <invitaciones@jdlargo.com>',
+      from: 'JD Largo <invitaciones@resend.dev>',
       to: input.to,
       subject: `Invitación para unirse a ${input.organizationName} en JD Largo`,
       react: InvitationEmail({
@@ -111,7 +114,7 @@ export async function sendInvitationEmail(input: SendInvitationEmailInput): Prom
       }),
     });
   } catch (error) {
-    console.error('[sendInvitationEmail] Error sending invitation email via Resend:', error);
+    console.error('[sendInvitationEmail] Error sending invitation email via Resend:', error instanceof Error ? error.message : error);
   }
 }
 
@@ -136,7 +139,7 @@ export async function sendDossierRejectedEmail(input: SendDossierRejectedEmailIn
 
   try {
     await resend.emails.send({
-      from: 'JD Largo <notificaciones@jdlargo.com>',
+      from: 'JD Largo <notificaciones@resend.dev>',
       to: input.to,
       subject: `Expediente rechazado por la contraparte (${input.dossierCode})`,
       react: DossierRejectedEmail({
@@ -148,7 +151,7 @@ export async function sendDossierRejectedEmail(input: SendDossierRejectedEmailIn
       }),
     });
   } catch (error) {
-    console.error('[sendDossierRejectedEmail] Error sending dossier rejected email via Resend:', error);
+    console.error('[sendDossierRejectedEmail] Error sending dossier rejected email via Resend:', error instanceof Error ? error.message : error);
   }
 }
 
@@ -175,7 +178,7 @@ export async function sendDossierExpirationReminderEmail(
 
   try {
     await resend.emails.send({
-      from: 'JD Largo <notificaciones@jdlargo.com>',
+      from: 'JD Largo <notificaciones@resend.dev>',
       to: input.to,
       subject: `Enlace de acceso vencido (${input.dossierCode})`,
       react: DossierExpirationReminderEmail({
@@ -187,7 +190,7 @@ export async function sendDossierExpirationReminderEmail(
       }),
     });
   } catch (error) {
-    console.error('[sendDossierExpirationReminderEmail] Error sending email via Resend:', error);
+    console.error('[sendDossierExpirationReminderEmail] Error sending email via Resend:', error instanceof Error ? error.message : error);
   }
 }
 
@@ -216,7 +219,7 @@ export async function sendDossierExpirationEscalationEmail(
 
   try {
     await resend.emails.send({
-      from: 'JD Largo <notificaciones@jdlargo.com>',
+      from: 'JD Largo <notificaciones@resend.dev>',
       to: input.to,
       subject: `Aviso de escalación: Expediente sin reactivar (${input.dossierCode})`,
       react: DossierExpirationEscalationEmail({
@@ -230,7 +233,7 @@ export async function sendDossierExpirationEscalationEmail(
       }),
     });
   } catch (error) {
-    console.error('[sendDossierExpirationEscalationEmail] Error sending email via Resend:', error);
+    console.error('[sendDossierExpirationEscalationEmail] Error sending email via Resend:', error instanceof Error ? error.message : error);
   }
 }
 
