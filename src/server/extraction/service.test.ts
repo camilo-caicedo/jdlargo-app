@@ -167,6 +167,8 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
   let orgBeta: Organization;
   let adminAlfaId: string;
   let adminBetaId: string;
+  let configVersionIdAlfa: string;
+  let configVersionIdBeta: string;
   let dossierAlfaId: string;
   let dossierBetaId: string;
   let documentAlfaId: string;
@@ -187,6 +189,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
 
     // Setup Alfa Config
     const draftAlfa = await createDraftConfiguration({ organizationId: orgAlfa.id, standard: 'SARLAFT' });
+    configVersionIdAlfa = draftAlfa.versionId;
     const cpTypeAlfa = await addCounterpartyType({
       organizationId: orgAlfa.id,
       configurationVersionId: draftAlfa.versionId,
@@ -242,6 +245,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
 
     // Setup Beta Config
     const draftBeta = await createDraftConfiguration({ organizationId: orgBeta.id, standard: 'SARLAFT' });
+    configVersionIdBeta = draftBeta.versionId;
     const cpTypeBeta = await addCounterpartyType({
       organizationId: orgBeta.id,
       configurationVersionId: draftBeta.versionId,
@@ -1080,6 +1084,127 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
         SELECT state FROM public.documents WHERE id = ${documentId}::uuid
       `;
       expect(docAfterSecond[0].state).toBe('received');
+    });
+
+    it('HU-021: runDocumentExtraction con vigencia solicita campos de fecha al motor', async () => {
+      // Crear draft nuevo con requisito que tiene vigencia
+      const draftHU021 = await createDraftConfiguration({ organizationId: orgAlfa.id, standard: 'SARLAFT' });
+      const cpTypeHU021 = await addCounterpartyType({
+        organizationId: orgAlfa.id,
+        configurationVersionId: draftHU021.versionId,
+        name: 'proveedor_hu021',
+        nature: 'legal_entity',
+      });
+
+      await addRequirement({
+        organizationId: orgAlfa.id,
+        configurationVersionId: draftHU021.versionId,
+        counterpartyTypeId: cpTypeHU021.id,
+        standard: 'SARLAFT',
+        type: 'document_type',
+        key: 'doc_vigencia_test',
+        mandatory: 'always',
+        blocking: true,
+        validity: { mode: 'duration_from_issued', durationDays: 365 },
+      });
+
+      const pubVersionHU021 = await publishDraftConfiguration({
+        organizationId: orgAlfa.id,
+        versionId: draftHU021.versionId,
+        publishedBy: adminAlfaId,
+        reason: 'Publish HU-021 config',
+      });
+
+      // Crear nuevo dossier con esta configuración
+      const dossierHU021 = await createDossierRequest({
+        organizationId: orgAlfa.id,
+        requestedBy: adminAlfaId,
+        counterpartyTypeName: 'proveedor_hu021',
+        party: {
+          identificationType: 'NIT',
+          identificationNumber: '900654321-9',
+          declaredName: 'Test Corp Validity',
+        },
+        internalOwnerId: adminAlfaId,
+      });
+
+      await executeTransition({
+        organizationId: orgAlfa.id,
+        dossierId: dossierHU021.id,
+        toState: 'enviada',
+        actorType: 'user',
+        actorId: adminAlfaId,
+      });
+      await executeTransition({
+        organizationId: orgAlfa.id,
+        dossierId: dossierHU021.id,
+        toState: 'en_diligenciamiento',
+        actorType: 'user',
+        actorId: adminAlfaId,
+      });
+
+      // Subir documento
+      const adminStorage = createSupabaseAdminClient();
+      const testPdfContent = Buffer.from('%PDF-1.4 Test for validity extraction');
+      const testPath = `${dossierHU021.id}/doc_vigencia_test/hu021-test.pdf`;
+      await adminStorage.storage
+        .from(DOSSIER_DOCUMENTS_BUCKET)
+        .upload(testPath, testPdfContent, { contentType: 'application/pdf', upsert: true });
+
+      const { readAndValidateUploadedFile } = await import('../documents/document');
+      const validated = await readAndValidateUploadedFile(testPath);
+
+      const { id: docId } = await confirmDocumentUpload({
+        organizationId: orgAlfa.id,
+        dossierId: dossierHU021.id,
+        documentType: 'doc_vigencia_test',
+        storagePath: testPath,
+        hash: validated.hash,
+        format: validated.format,
+        size: validated.size,
+        uploadedByType: 'counterparty',
+      });
+
+      // Ejecutar extracción con motor que devuelve una fecha
+      const mockEngine = new MockExtractionEngine({
+        status: 'succeeded',
+        provider: 'mock-provider',
+        model: 'mock-model-v1',
+        modelVersion: '2026.1',
+        instructionTemplateId: 'mock-template',
+        instructionTemplateVersion: '1.0',
+        dataDestination: 'mock-datacenter',
+        fields: [
+          { field: 'nit', value: '900123456-1', confidence: 0.95 },
+          { field: 'document:doc_vigencia_test:issued_at', value: '2025-06-15', confidence: 0.90 },
+        ],
+      });
+
+      const result = await runDocumentExtraction({
+        organizationId: orgAlfa.id,
+        dossierId: dossierHU021.id,
+        documentId: docId,
+        engine: mockEngine,
+      });
+
+      // Verificar que el motor recibió el campo de fecha en expectedFields
+      expect(mockEngine.lastInput).toBeDefined();
+      expect(mockEngine.lastInput?.expectedFields).toBeDefined();
+      const issuedAtField = mockEngine.lastInput?.expectedFields?.find(
+        (f) => f.key === 'document:doc_vigencia_test:issued_at',
+      );
+      expect(issuedAtField).toBeDefined();
+      expect(issuedAtField?.label).toContain('expedición');
+
+      // Verificar que la afirmación extraída se registró en la BD
+      const assertions = await adminSql`
+        SELECT * FROM public.assertions
+        WHERE organization_id = ${orgAlfa.id}
+          AND field = 'document:doc_vigencia_test:issued_at'
+          AND origin = 'extracted'
+      `;
+      expect(assertions.length).toBeGreaterThan(0);
+      expect(assertions[0].value).toBe('2025-06-15');
     });
   });
 });
