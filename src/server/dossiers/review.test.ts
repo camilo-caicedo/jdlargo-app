@@ -168,7 +168,7 @@ describe('HU-014: Revisión del expediente y solicitud de correcciones', () => {
     const cpType = await addCounterpartyType({
       organizationId: orgId,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -204,7 +204,7 @@ describe('HU-014: Revisión del expediente y solicitud de correcciones', () => {
     const dossier = await createDossierRequest({
       organizationId: orgId,
       requestedBy: adminUserId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '901234567',

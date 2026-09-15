@@ -59,9 +59,10 @@ export default async function RolesPage({
     );
   }
 
-  const draft = await getDraftConfiguration(organizationId);
-  const active = await getActiveConfiguration(organizationId);
-  const current = draft || active;
+  const [draft, active] = await Promise.all([
+    getDraftConfiguration(organizationId),
+    getActiveConfiguration(organizationId),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -74,15 +75,64 @@ export default async function RolesPage({
         </p>
       </div>
 
-      <RolesClient
-        organizationId={organizationId}
-        slug={slug}
-        isDraft={!!draft}
-        versionNumber={current?.versionNumber || '1'}
-        roles={current?.roles || []}
-        allPermissions={ALL_PERMISSIONS as unknown as string[]}
-        canAdminister={canAdminister.granted}
-      />
+      {draft && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-300 mb-2">
+              Borrador en edición (Versión {draft.versionNumber})
+            </h3>
+            <RolesClient
+              organizationId={organizationId}
+              slug={slug}
+              isDraft={true}
+              versionNumber={draft.versionNumber}
+              roles={draft.roles || []}
+              allPermissions={ALL_PERMISSIONS as unknown as string[]}
+              canAdminister={canAdminister.granted}
+              readOnly={false}
+            />
+          </div>
+
+          {active && (
+            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-6 mt-6">
+              <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
+                Versión publicada actual (Versión {active.versionNumber})
+              </h3>
+              <RolesClient
+                organizationId={organizationId}
+                slug={slug}
+                isDraft={false}
+                versionNumber={active.versionNumber}
+                roles={active.roles || []}
+                allPermissions={ALL_PERMISSIONS as unknown as string[]}
+                canAdminister={canAdminister.granted}
+                readOnly={true}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {!draft && active && (
+        <RolesClient
+          organizationId={organizationId}
+          slug={slug}
+          isDraft={false}
+          versionNumber={active.versionNumber}
+          roles={active.roles || []}
+          allPermissions={ALL_PERMISSIONS as unknown as string[]}
+          canAdminister={canAdminister.granted}
+          readOnly={false}
+        />
+      )}
+
+      {!draft && !active && (
+        <Card>
+          <CardContent className="py-8 text-center text-zinc-500 text-sm">
+            No hay configuración disponible. Cree un borrador para comenzar.
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

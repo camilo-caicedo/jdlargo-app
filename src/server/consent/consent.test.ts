@@ -167,7 +167,7 @@ describe('HU-011: Consent and Privacy Notice Domain', () => {
     const cpType = await addCounterpartyType({
       organizationId: orgId,
       configurationVersionId: versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -218,7 +218,7 @@ describe('HU-011: Consent and Privacy Notice Domain', () => {
     const dossier = await createDossierRequest({
       organizationId: orgId,
       requestedBy: adminUserId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900999001-1',
@@ -282,7 +282,7 @@ describe('HU-011: Consent and Privacy Notice Domain', () => {
     const dossier = await createDossierRequest({
       organizationId: orgId,
       requestedBy: adminUserId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900999002-2',
@@ -333,7 +333,7 @@ describe('HU-011: Consent and Privacy Notice Domain', () => {
     const dossier = await createDossierRequest({
       organizationId: orgId,
       requestedBy: adminUserId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900999003-3',

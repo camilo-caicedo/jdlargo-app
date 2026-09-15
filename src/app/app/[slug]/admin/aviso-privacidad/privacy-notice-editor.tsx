@@ -39,6 +39,7 @@ interface PrivacyNoticeEditorProps {
   initialPurposes: PrivacyNoticePurpose[];
   canAdminister: boolean;
   canPublish: boolean;
+  readOnly?: boolean;
 }
 
 export function PrivacyNoticeEditor({
@@ -54,6 +55,7 @@ export function PrivacyNoticeEditor({
   initialPurposes,
   canAdminister,
   canPublish,
+  readOnly = false,
 }: PrivacyNoticeEditorProps) {
   // Form values
   const [text, setText] = useState(initialText);
@@ -83,6 +85,7 @@ export function PrivacyNoticeEditor({
 
   // Purpose handling
   const handleAddPurpose = () => {
+    if (readOnly) return;
     setPurposes((prev) => [
       ...prev,
       {
@@ -94,6 +97,7 @@ export function PrivacyNoticeEditor({
   };
 
   const handleRemovePurpose = (index: number) => {
+    if (readOnly) return;
     setPurposes((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -210,7 +214,7 @@ export function PrivacyNoticeEditor({
         {/* Action Button: Edit or Publish */}
         <div className="flex items-center gap-2">
           {!isDraft ? (
-            canAdminister && (
+            canAdminister && !readOnly && (
               <Button
                 type="button"
                 onClick={handleCreateDraft}
@@ -223,7 +227,7 @@ export function PrivacyNoticeEditor({
               </Button>
             )
           ) : (
-            canPublish && (
+            canPublish && !readOnly && (
               <Button
                 type="button"
                 onClick={() => setShowPublishDialog(true)}
@@ -264,7 +268,7 @@ export function PrivacyNoticeEditor({
                 rows={6}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                disabled={!isDraft || !canAdminister || isSaving}
+                disabled={!isDraft || !canAdminister || readOnly || isSaving}
                 placeholder="Escriba el texto legal del aviso de privacidad para el tratamiento de datos personales..."
                 className="text-sm font-sans"
                 required
@@ -281,7 +285,7 @@ export function PrivacyNoticeEditor({
                   id="dataController"
                   value={dataController}
                   onChange={(e) => setDataController(e.target.value)}
-                  disabled={!isDraft || !canAdminister || isSaving}
+                  disabled={!isDraft || !canAdminister || readOnly || isSaving}
                   placeholder="Ej: Alfa Ficticia S.A.S."
                   required
                 />
@@ -295,7 +299,7 @@ export function PrivacyNoticeEditor({
                   id="dataProcessor"
                   value={dataProcessor}
                   onChange={(e) => setDataProcessor(e.target.value)}
-                  disabled={!isDraft || !canAdminister || isSaving}
+                  disabled={!isDraft || !canAdminister || readOnly || isSaving}
                   placeholder="Ej: Plataforma JD Largo"
                   required
                 />
@@ -309,7 +313,7 @@ export function PrivacyNoticeEditor({
                   id="rightsChannels"
                   value={rightsChannels}
                   onChange={(e) => setRightsChannels(e.target.value)}
-                  disabled={!isDraft || !canAdminister || isSaving}
+                  disabled={!isDraft || !canAdminister || readOnly || isSaving}
                   placeholder="Ej: privacidad@miempresa.com"
                   required
                 />
@@ -355,7 +359,7 @@ export function PrivacyNoticeEditor({
                         <Input
                           value={p.key}
                           onChange={(e) => handlePurposeChange(idx, 'key', e.target.value)}
-                          disabled={!isDraft || !canAdminister || isSaving}
+                          disabled={!isDraft || !canAdminister || readOnly || isSaving}
                           placeholder="ej: laft_screening"
                           className="h-8 text-xs font-mono"
                           required
@@ -376,7 +380,7 @@ export function PrivacyNoticeEditor({
                                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                                 : ''
                             }`}
-                            disabled={!isDraft || !canAdminister || isSaving}
+                            disabled={!isDraft || !canAdminister || readOnly || isSaving}
                             onClick={() => handlePurposeChange(idx, 'requiresAuthorization', true)}
                           >
                             Sí
@@ -390,7 +394,7 @@ export function PrivacyNoticeEditor({
                                 ? 'bg-zinc-700 hover:bg-zinc-800 text-white'
                                 : ''
                             }`}
-                            disabled={!isDraft || !canAdminister || isSaving}
+                            disabled={!isDraft || !canAdminister || readOnly || isSaving}
                             onClick={() => handlePurposeChange(idx, 'requiresAuthorization', false)}
                           >
                             No
@@ -420,7 +424,7 @@ export function PrivacyNoticeEditor({
                       <Input
                         value={p.description}
                         onChange={(e) => handlePurposeChange(idx, 'description', e.target.value)}
-                        disabled={!isDraft || !canAdminister || isSaving}
+                        disabled={!isDraft || !canAdminister || readOnly || isSaving}
                         placeholder="Descripción clara de cómo y por qué se utiliza la información..."
                         className="h-8 text-xs"
                         required

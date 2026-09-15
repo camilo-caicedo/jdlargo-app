@@ -1,11 +1,12 @@
 import { sql, eq, and, desc, lte } from 'drizzle-orm';
 import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
-import { configurationVersions, roles, rolePermissions, privacyNotices } from '../db/schema';
+import { configurationVersions, roles, rolePermissions, privacyNotices, counterpartyTypes, requirements } from '../db/schema';
 import type { PermissionKey } from '../auth/permissions';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
-import { assertRequirementMatrixIsComplete } from './requirement-matrix';
-import { assertPrivacyNoticeExists } from './privacy-notice';
+import { assertRequirementMatrixIsComplete, listCounterpartyTypes, getRequirementsForType } from './requirement-matrix';
+import { assertPrivacyNoticeExists, getPrivacyNoticeForVersion } from './privacy-notice';
+import type { PrivacyNoticeDetail } from './privacy-notice';
 import { BASE_ROLES_TEMPLATE } from '../auth/role-config';
 
 export interface DraftRoleInput {
@@ -44,6 +45,19 @@ export interface ConfigurationRoleDetail {
   permissions: PermissionKey[];
 }
 
+export interface CounterpartyTypeWithRequirements {
+  id: string;
+  name: string;
+  nature: 'natural_person' | 'legal_entity';
+  requirements: {
+    id: string;
+    type: 'field' | 'document_type';
+    key: string;
+    mandatory: 'always' | 'conditional' | 'optional';
+    blocking: boolean;
+  }[];
+}
+
 export interface ConfigurationVersionDetail {
   id: string;
   organizationId: string;
@@ -56,6 +70,8 @@ export interface ConfigurationVersionDetail {
   publishedAt: Date | null;
   reason: string | null;
   roles: ConfigurationRoleDetail[];
+  counterpartyTypes: CounterpartyTypeWithRequirements[];
+  privacyNotice: Pick<PrivacyNoticeDetail, 'id' | 'text' | 'purposes'> | null;
 }
 
 export interface VersionDiffResult {
@@ -68,6 +84,14 @@ export interface VersionDiffResult {
     added: PermissionKey[];
     removed: PermissionKey[];
   }[];
+  counterpartyTypesAdded: string[];
+  counterpartyTypesRemoved: string[];
+  requirementsChanged: {
+    counterpartyTypeName: string;
+    added: string[];
+    removed: string[];
+  }[];
+  privacyNoticeChanged: boolean;
 }
 
 /**
@@ -186,6 +210,42 @@ export async function createDraftConfiguration(
         dataProcessor: activeNotice.dataProcessor,
         rightsChannels: activeNotice.rightsChannels,
       });
+    }
+
+    // Clone counterparty types and their requirements from active version
+    const activeTypes = await listCounterpartyTypes(input.organizationId, activeVersionForNotice.id, client);
+    for (const type of activeTypes) {
+      const [newType] = await client
+        .insert(counterpartyTypes)
+        .values({
+          organizationId: input.organizationId,
+          configurationVersionId: draftVer.id,
+          name: type.name,
+          nature: type.nature as 'natural_person' | 'legal_entity',
+        })
+        .returning();
+
+      const typeRequirements = await getRequirementsForType(
+        input.organizationId,
+        activeVersionForNotice.id,
+        type.id,
+        client,
+      );
+      if (typeRequirements.length > 0) {
+        const reqValues = typeRequirements.map((r) => ({
+          organizationId: input.organizationId,
+          configurationVersionId: draftVer.id,
+          counterpartyTypeId: newType.id,
+          standard: r.standard,
+          type: r.type,
+          key: r.key,
+          mandatory: r.mandatory,
+          blocking: r.blocking,
+          condition: r.condition,
+          validation: r.validation,
+        }));
+        await client.insert(requirements).values(reqValues);
+      }
     }
   }
 
@@ -461,7 +521,7 @@ export async function getDraftConfiguration(
 }
 
 /**
- * Helper to fetch complete detail with nested roles and permissions.
+ * Helper to fetch complete detail with nested roles, permissions, counterparty types, requirements, and privacy notice.
  */
 export async function getConfigurationVersionDetail(
   organizationId: string,
@@ -518,6 +578,33 @@ export async function getConfigurationVersionDetail(
     };
   });
 
+  // Load counterparty types with their requirements
+  const typeRows = await listCounterpartyTypes(organizationId, versionId, client);
+  const counterpartyTypesDetail: CounterpartyTypeWithRequirements[] = [];
+  for (const type of typeRows) {
+    const typeRequirements = await getRequirementsForType(organizationId, versionId, type.id, client);
+    counterpartyTypesDetail.push({
+      id: type.id,
+      name: type.name,
+      nature: type.nature as 'natural_person' | 'legal_entity',
+      requirements: typeRequirements.map((r) => ({
+        id: r.requirementId,
+        type: r.type as 'field' | 'document_type',
+        key: r.key,
+        mandatory: r.mandatory as 'always' | 'conditional' | 'optional',
+        blocking: r.blocking,
+      })),
+    });
+  }
+
+  // Load privacy notice
+  const privacyNoticeDetail = await getPrivacyNoticeForVersion(organizationId, versionId, client);
+  const privacyNotice = privacyNoticeDetail ? {
+    id: privacyNoticeDetail.id,
+    text: privacyNoticeDetail.text,
+    purposes: privacyNoticeDetail.purposes,
+  } : null;
+
   return {
     id: version.id,
     organizationId: version.organizationId,
@@ -530,6 +617,8 @@ export async function getConfigurationVersionDetail(
     publishedAt: version.publishedAt,
     reason: version.reason,
     roles: rolesDetail,
+    counterpartyTypes: counterpartyTypesDetail,
+    privacyNotice,
   };
 }
 
@@ -572,6 +661,7 @@ export async function compareConfigurationVersions(
   const v1 = await getConfigurationVersionDetail(organizationId, v1Row.id, client);
   const v2 = await getConfigurationVersionDetail(organizationId, v2Row.id, client);
 
+  // Roles diff
   const v1RoleCodes = new Set(v1.roles.map((r) => r.code));
   const v2RoleCodes = new Set(v2.roles.map((r) => r.code));
 
@@ -599,12 +689,48 @@ export async function compareConfigurationVersions(
     }
   }
 
+  // Counterparty types diff (by name, since ids change between versions)
+  const v1TypeNames = new Set(v1.counterpartyTypes.map((t) => t.name));
+  const v2TypeNames = new Set(v2.counterpartyTypes.map((t) => t.name));
+
+  const counterpartyTypesAdded = [...v2TypeNames].filter((n) => !v1TypeNames.has(n));
+  const counterpartyTypesRemoved = [...v1TypeNames].filter((n) => !v2TypeNames.has(n));
+
+  // Requirements diff (by type name, then by requirement key)
+  const requirementsChanged: VersionDiffResult['requirementsChanged'] = [];
+
+  for (const t2 of v2.counterpartyTypes) {
+    const t1 = v1.counterpartyTypes.find((t) => t.name === t2.name);
+    if (t1) {
+      const r1Keys = new Set(t1.requirements.map((r) => r.key));
+      const r2Keys = new Set(t2.requirements.map((r) => r.key));
+
+      const reqAdded = [...r2Keys].filter((k) => !r1Keys.has(k));
+      const reqRemoved = [...r1Keys].filter((k) => !r2Keys.has(k));
+
+      if (reqAdded.length > 0 || reqRemoved.length > 0) {
+        requirementsChanged.push({
+          counterpartyTypeName: t2.name,
+          added: reqAdded,
+          removed: reqRemoved,
+        });
+      }
+    }
+  }
+
+  // Privacy notice diff
+  const privacyNoticeChanged = v1.privacyNotice?.text !== v2.privacyNotice?.text;
+
   return {
     previousVersionNumber: v1Number,
     newVersionNumber: v2Number,
     rolesAdded,
     rolesRemoved,
     permissionsChanged,
+    counterpartyTypesAdded,
+    counterpartyTypesRemoved,
+    requirementsChanged,
+    privacyNoticeChanged,
   };
 }
 
@@ -615,7 +741,7 @@ export async function compareConfigurationVersions(
 export async function listConfigurationVersions(
   organizationId: string,
   txClient?: DrizzleClient,
-): Promise<Pick<ConfigurationVersionDetail, 'id' | 'versionNumber' | 'status' | 'standard' | 'effectiveFrom' | 'publishedAt'>[]> {
+): Promise<Pick<ConfigurationVersionDetail, 'id' | 'versionNumber' | 'status' | 'standard' | 'effectiveFrom' | 'publishedAt' | 'reason'>[]> {
   const client = txClient || db;
 
   const rows = await client
@@ -626,6 +752,7 @@ export async function listConfigurationVersions(
       standard: configurationVersions.standard,
       effectiveFrom: configurationVersions.effectiveFrom,
       publishedAt: configurationVersions.publishedAt,
+      reason: configurationVersions.reason,
     })
     .from(configurationVersions)
     .where(eq(configurationVersions.organizationId, organizationId))
@@ -638,6 +765,7 @@ export async function listConfigurationVersions(
     standard: r.standard,
     effectiveFrom: r.effectiveFrom,
     publishedAt: r.publishedAt,
+    reason: r.reason,
   }));
 }
 

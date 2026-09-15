@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { Plus, AlertCircle, Layers, FileText, CheckCircle2 } from "lucide-react";
-import { addCounterpartyTypeAction, addRequirementAction } from "./actions";
+import { Plus, AlertCircle, Layers, FileText, CheckCircle2, Trash2 } from "lucide-react";
+import { addCounterpartyTypeAction, addRequirementAction, removeCounterpartyTypeAction, removeRequirementAction } from "./actions";
 import { createDraftFromRolesAction } from "../roles/actions";
 import { getDocumentTypeOptions, isDocumentTypeSupported } from "@/lib/document-type-catalog";
 import {
@@ -45,6 +45,7 @@ export function MatrizRequisitosClient({
   isDraft,
   typesWithRequirements,
   canAdminister,
+  readOnly = false,
 }: {
   organizationId: string;
   slug: string;
@@ -54,6 +55,7 @@ export function MatrizRequisitosClient({
   isDraft: boolean;
   typesWithRequirements: CounterpartyTypeWithReqs[];
   canAdminister: boolean;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +81,9 @@ export function MatrizRequisitosClient({
   const documentTypeItems = [...documentTypeOptions, { value: CUSTOM_DOC_TYPE, label: "Otro (personalizado)", description: "Define un tipo de documento no en el catálogo" }];
   const selectedDocType = documentTypeOptions.find((d) => d.value === reqKey) || (reqKey === CUSTOM_DOC_TYPE ? documentTypeItems[documentTypeItems.length - 1] : null);
   const isCustomDocType = reqKey === CUSTOM_DOC_TYPE || (reqKey && !isDocumentTypeSupported(reqKey));
+
+  // Delete confirmation state
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: "type" | "requirement"; id: string; name: string } | null>(null);
 
   async function handleCreateDraft() {
     setIsPending(true);
@@ -159,6 +164,46 @@ export function MatrizRequisitosClient({
     }
   }
 
+  async function handleConfirmDelete() {
+    if (!deleteConfirm || !versionId) return;
+
+    setIsPending(true);
+    setError(null);
+
+    try {
+      if (deleteConfirm.type === "type") {
+        const res = await removeCounterpartyTypeAction(
+          slug,
+          organizationId,
+          versionId,
+          deleteConfirm.id,
+        );
+        if (res.error) {
+          setError(res.error);
+        } else {
+          setSuccess(`Tipo de contraparte "${deleteConfirm.name}" eliminado.`);
+          router.refresh();
+        }
+      } else {
+        const res = await removeRequirementAction(
+          slug,
+          organizationId,
+          versionId,
+          deleteConfirm.id,
+        );
+        if (res.error) {
+          setError(res.error);
+        } else {
+          setSuccess(`Requisito "${deleteConfirm.name}" eliminado.`);
+          router.refresh();
+        }
+      }
+    } finally {
+      setIsPending(false);
+      setDeleteConfirm(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {error && (
@@ -194,13 +239,47 @@ export function MatrizRequisitosClient({
                 : "La versión vigente está congelada. Para modificar requisitos o tipos, cree un nuevo borrador."}
             </CardDescription>
           </div>
-          {!isDraft && canAdminister && (
+          {!isDraft && canAdminister && !readOnly && (
             <Button onClick={handleCreateDraft} disabled={isPending}>
               Crear borrador para editar
             </Button>
           )}
         </CardHeader>
       </Card>
+
+      {/* Delete confirmation modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="relative w-full max-w-md rounded-xl bg-white dark:bg-zinc-900 shadow-lg p-6 animate-in fade-in zoom-in-95 m-4">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+              Confirmar eliminación
+            </h2>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
+              {deleteConfirm.type === "type"
+                ? `¿Está seguro de que desea eliminar el tipo de contraparte "${deleteConfirm.name}" y todos sus requisitos asociados? Esta acción no se puede deshacer.`
+                : `¿Está seguro de que desea eliminar el requisito "${deleteConfirm.name}"? Esta acción no se puede deshacer.`}
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={isPending}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleConfirmDelete}
+                disabled={isPending}
+              >
+                Eliminar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Counterparty Types Section */}
       <div className="space-y-4">
@@ -210,7 +289,7 @@ export function MatrizRequisitosClient({
             Tipos de Contraparte y sus Requisitos
           </h3>
 
-          {isDraft && canAdminister && (
+          {isDraft && canAdminister && !readOnly && (
             <Button
               variant="outline"
               size="sm"
@@ -224,7 +303,7 @@ export function MatrizRequisitosClient({
         </div>
 
         {/* Form to add counterparty type */}
-        {showAddType && isDraft && (
+        {showAddType && isDraft && !readOnly && (
           <Card className="border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/50">
             <CardContent className="pt-6">
               <form onSubmit={handleAddType} className="space-y-4">
@@ -289,23 +368,35 @@ export function MatrizRequisitosClient({
                       </span>
                     </div>
 
-                    {isDraft && canAdminister && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSelectedTypeId(selectedTypeId === t.id ? null : t.id)}
-                        className="text-xs flex items-center gap-1"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        Agregar requisito
-                      </Button>
+                    {isDraft && canAdminister && !readOnly && (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedTypeId(selectedTypeId === t.id ? null : t.id)}
+                          className="text-xs flex items-center gap-1"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Agregar requisito
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteConfirm({ type: "type", id: t.id, name: t.name })}
+                          className="text-xs flex items-center gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                          disabled={isPending}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Eliminar
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </CardHeader>
 
                 <CardContent className="p-4 space-y-3">
                   {/* Add requirement form for this type */}
-                  {selectedTypeId === t.id && isDraft && (
+                  {selectedTypeId === t.id && isDraft && !readOnly && (
                     <form onSubmit={handleAddRequirement} className="p-4 mb-4 border rounded-md bg-zinc-50 dark:bg-zinc-900 space-y-4">
                       <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
                         Nuevo requisito para {t.name}
@@ -450,7 +541,7 @@ export function MatrizRequisitosClient({
                   ) : (
                     <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
                       {t.requirements.map((req) => (
-                        <div key={req.requirementId} className="py-2 flex items-center justify-between text-sm">
+                        <div key={req.requirementId} className="py-2 flex items-center justify-between text-sm group">
                           <div className="flex items-center gap-2">
                             <FileText className="h-4 w-4 text-zinc-400" />
                             <code className="font-mono text-xs px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded">
@@ -469,6 +560,17 @@ export function MatrizRequisitosClient({
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 border border-red-200 dark:border-red-800">
                                 Bloqueante
                               </span>
+                            )}
+                            {isDraft && canAdminister && !readOnly && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDeleteConfirm({ type: "requirement", id: req.requirementId, name: req.key })}
+                                className="text-xs flex items-center gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                                disabled={isPending}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
                             )}
                           </div>
                         </div>

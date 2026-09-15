@@ -171,7 +171,7 @@ describe('HU-019: Conciliación de lo declarado con lo extraído', () => {
     const cpTypeAlfa = await addCounterpartyType({
       organizationId: orgAlfa.id,
       configurationVersionId: draftAlfa.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -224,7 +224,7 @@ describe('HU-019: Conciliación de lo declarado con lo extraído', () => {
     const dAlfa = await createDossierRequest({
       organizationId: orgAlfa.id,
       requestedBy: adminAlfaId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900123456-1',
@@ -279,7 +279,7 @@ describe('HU-019: Conciliación de lo declarado con lo extraído', () => {
     const cpTypeBeta = await addCounterpartyType({
       organizationId: orgBeta.id,
       configurationVersionId: draftBeta.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -303,7 +303,7 @@ describe('HU-019: Conciliación de lo declarado con lo extraído', () => {
     const dBeta = await createDossierRequest({
       organizationId: orgBeta.id,
       requestedBy: adminBetaId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900999888-2',

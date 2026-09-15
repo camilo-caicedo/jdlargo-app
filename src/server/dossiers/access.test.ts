@@ -217,7 +217,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const typeRes = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -240,7 +240,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: opUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '901234567-1',
@@ -338,7 +338,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const typeRes = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -361,7 +361,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: opUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '901234567-2',
@@ -473,7 +473,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const typeRes = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -496,7 +496,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: opUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '901234567-3',
@@ -599,7 +599,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const cpType = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -624,7 +624,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: opUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '901234567-4',
@@ -707,7 +707,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const cpType = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -732,7 +732,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: analystUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '901234567-9',
@@ -809,7 +809,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const cpType = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -844,7 +844,7 @@ describe('HU-010: Emisión y gestión del enlace de acceso (App interna)', () =>
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: analystUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '901234567-8',

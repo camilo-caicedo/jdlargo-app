@@ -172,7 +172,7 @@ describe('HU-015: Decisión del Oficial de Cumplimiento', () => {
     const cpType = await addCounterpartyType({
       organizationId: orgId,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -217,7 +217,7 @@ describe('HU-015: Decisión del Oficial de Cumplimiento', () => {
   async function setupDossierInPendingDecision(idNumber: string) {
     const d = await createDossierRequest({
       organizationId: orgId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: idNumber,

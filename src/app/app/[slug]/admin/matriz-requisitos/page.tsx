@@ -59,29 +59,17 @@ export default async function MatrizRequisitosPage({
     );
   }
 
-  const draft = await getDraftConfiguration(organizationId);
-  const active = await getActiveConfiguration(organizationId);
-  const targetConfig = draft || active;
+  const [draft, active] = await Promise.all([
+    getDraftConfiguration(organizationId),
+    getActiveConfiguration(organizationId),
+  ]);
 
-  let typesWithRequirements: Array<{
-    id: string;
-    name: string;
-    nature: string;
-    requirements: Array<{
-      requirementId: string;
-      standard: string;
-      type: "field" | "document_type";
-      key: string;
-      mandatory: "always" | "conditional" | "optional";
-      blocking: boolean;
-    }>;
-  }> = [];
-
-  if (targetConfig) {
-    const types = await listCounterpartyTypes(organizationId, targetConfig.id);
-    typesWithRequirements = await Promise.all(
+  const loadTypesForConfig = async (config: typeof draft) => {
+    if (!config) return [];
+    const types = await listCounterpartyTypes(organizationId, config.id);
+    return Promise.all(
       types.map(async (t) => {
-        const reqs = await getRequirementsForType(organizationId, targetConfig.id, t.id);
+        const reqs = await getRequirementsForType(organizationId, config.id, t.id);
         return {
           id: t.id,
           name: t.name,
@@ -97,7 +85,12 @@ export default async function MatrizRequisitosPage({
         };
       }),
     );
-  }
+  };
+
+  const [draftTypes, activeTypes] = await Promise.all([
+    draft ? loadTypesForConfig(draft) : Promise.resolve([]),
+    active ? loadTypesForConfig(active) : Promise.resolve([]),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -110,16 +103,67 @@ export default async function MatrizRequisitosPage({
         </p>
       </div>
 
-      <MatrizRequisitosClient
-        organizationId={organizationId}
-        slug={slug}
-        versionId={targetConfig?.id || null}
-        versionNumber={targetConfig?.versionNumber || "1"}
-        standard={targetConfig?.standard || "sarlaft"}
-        isDraft={!!draft}
-        typesWithRequirements={typesWithRequirements}
-        canAdminister={canAdminister.granted}
-      />
+      {draft && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-300 mb-2">
+              Borrador en edición (Versión {draft.versionNumber})
+            </h3>
+            <MatrizRequisitosClient
+              organizationId={organizationId}
+              slug={slug}
+              versionId={draft.id}
+              versionNumber={draft.versionNumber}
+              standard={draft.standard || "sarlaft"}
+              isDraft={true}
+              typesWithRequirements={draftTypes}
+              canAdminister={canAdminister.granted}
+              readOnly={false}
+            />
+          </div>
+
+          {active && (
+            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-6 mt-6">
+              <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
+                Versión publicada actual (Versión {active.versionNumber})
+              </h3>
+              <MatrizRequisitosClient
+                organizationId={organizationId}
+                slug={slug}
+                versionId={active.id}
+                versionNumber={active.versionNumber}
+                standard={active.standard || "sarlaft"}
+                isDraft={false}
+                typesWithRequirements={activeTypes}
+                canAdminister={canAdminister.granted}
+                readOnly={true}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {!draft && active && (
+        <MatrizRequisitosClient
+          organizationId={organizationId}
+          slug={slug}
+          versionId={active.id}
+          versionNumber={active.versionNumber}
+          standard={active.standard || "sarlaft"}
+          isDraft={false}
+          typesWithRequirements={activeTypes}
+          canAdminister={canAdminister.granted}
+          readOnly={false}
+        />
+      )}
+
+      {!draft && !active && (
+        <Card>
+          <CardContent className="py-8 text-center text-zinc-500 text-sm">
+            No hay configuración disponible. Cree un borrador para comenzar.
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

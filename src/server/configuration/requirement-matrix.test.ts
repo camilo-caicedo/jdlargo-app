@@ -18,6 +18,8 @@ import {
   addRequirement,
   listCounterpartyTypes,
   getRequirementsForType,
+  removeCounterpartyType,
+  removeRequirement,
 } from './requirement-matrix';
 import { withTenantContext } from '../db/client';
 import { sql } from 'drizzle-orm';
@@ -56,16 +58,63 @@ const TEST_ORG_NAMES = [
   'Incomplete Matrix Org',
   'Alfa Matrix Org',
   'Beta Matrix Org',
+  'Clone Test Org',
+  'Delete Req Test Org',
+  'Delete Type Test Org',
+  'No Delete Test Org',
+  'Alfa Delete Org',
+  'Beta Delete Org',
 ];
 
 async function cleanupTestData() {
   await new Promise((r) => setTimeout(r, 100));
   await adminSql`SET app.allow_config_cleanup = 'true'`;
+
+  // First: break FK from configuration_versions.published_by to users
+  await adminSql`
+    UPDATE public.configuration_versions
+    SET published_by = NULL
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+
+  // Delete in order of dependencies
   await adminSql`
     DELETE FROM public.audit_log
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
        OR actor_user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu007.com')
   `;
+
+  await adminSql`
+    DELETE FROM public.requirements
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+
+  await adminSql`
+    DELETE FROM public.counterparty_types
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+
+  await adminSql`
+    DELETE FROM public.privacy_notices
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+
+  await adminSql`
+    DELETE FROM public.role_permissions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+
+  await adminSql`
+    DELETE FROM public.roles
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+
+  // Delete configuration_versions (FK now broken by UPDATE above)
+  await adminSql`
+    DELETE FROM public.configuration_versions
+    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+  `;
+
   await adminSql`ALTER TABLE public.memberships DISABLE TRIGGER trg_prevent_removing_last_admin`;
   await adminSql`
     DELETE FROM public.memberships
@@ -73,48 +122,41 @@ async function cleanupTestData() {
        OR user_id IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu007.com')
   `;
   await adminSql`ALTER TABLE public.memberships ENABLE TRIGGER trg_prevent_removing_last_admin`;
-  await adminSql`
-    DELETE FROM public.requirements
-    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-  `;
-  await adminSql`
-    DELETE FROM public.counterparty_types
-    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-  `;
-  await adminSql`
-    DELETE FROM public.role_permissions
-    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-  `;
-  await adminSql`
-    DELETE FROM public.roles
-    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-  `;
-  await adminSql`
-    DELETE FROM public.privacy_notices
-    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-  `;
-  await adminSql`
-    DELETE FROM public.configuration_versions
-    WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
-  `;
+
   await adminSql`
     DELETE FROM public.organizations
     WHERE name IN ${adminSql(TEST_ORG_NAMES)}
   `;
-  await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu007.com'`;
-  await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu007.com'`;
+
+  // Delete auth users - may still have FK references, so use try/catch
+  try {
+    await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu007.com'`;
+  } catch (e) {
+    // If there are still FK references, update all remaining config_versions published_by to NULL
+    await adminSql`
+      UPDATE public.configuration_versions SET published_by = NULL
+      WHERE published_by IN (SELECT id FROM auth.users WHERE email LIKE '%@test-hu007.com')
+    `;
+    await adminSql`DELETE FROM public.users WHERE email LIKE '%@test-hu007.com'`;
+  }
+  try {
+    await adminSql`DELETE FROM auth.users WHERE email LIKE '%@test-hu007.com'`;
+  } catch {
+    // Ignore if FK still exists
+  }
+
   await adminSql`RESET app.allow_config_cleanup`;
 }
 
 describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
   beforeAll(async () => {
     await cleanupTestData();
-  });
+  }, 60000);
 
   afterAll(async () => {
     await cleanupTestData();
     await adminSql.end();
-  });
+  }, 60000);
 
   it('Escenario: Cargar tipos de contraparte en una versión de configuración', async () => {
     const adminUser = await createTestAuthUser('admin1@test-hu007.com', 'Admin Org 1');
@@ -129,7 +171,7 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
     const typeRes = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     expect(typeRes.id).toBeDefined();
@@ -153,10 +195,13 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
     });
     expect(published.status).toBe('published');
 
+    // El borrador ya nace con los tipos base clonados de la versión activa (seedBaseConfiguration
+    // publica proveedor/cliente/empleado como v1) — buscamos el tipo que este test agregó, no
+    // asumimos que es el único de la lista.
     const types = await listCounterpartyTypes(org.id, draft.versionId);
-    expect(types).toHaveLength(1);
-    expect(types[0].name).toBe('proveedor');
-    expect(types[0].nature).toBe('legal_entity');
+    const customType = types.find((t) => t.name === 'proveedor_custom');
+    expect(customType).toBeDefined();
+    expect(customType?.nature).toBe('legal_entity');
   });
 
   it('Escenario: La matriz define qué se exige a cada combinación', async () => {
@@ -172,7 +217,7 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
     const typeRes = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -238,7 +283,7 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
     const proveedor = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -300,7 +345,7 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
     const tipoV1 = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft1.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -334,33 +379,21 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
       })
     ).rejects.toThrow(/Solo se pueden modificar versiones en estado borrador/);
 
-    // Para cambiar la matriz, se crea borrador v3
+    // Para cambiar la matriz, se crea borrador v3 — nace con 'proveedor_custom' (y su tax_id)
+    // ya clonados de v2, así que no hace falta volver a declararlos (HU de clonado de borradores).
     const draft2 = await createDraftConfiguration({
       organizationId: org.id,
       standard: 'SARLAFT',
     });
 
-    const tipoV2 = await addCounterpartyType({
-      organizationId: org.id,
-      configurationVersionId: draft2.versionId,
-      name: 'proveedor',
-      nature: 'legal_entity',
-    });
+    const draft2Types = await listCounterpartyTypes(org.id, draft2.versionId);
+    const tipoV2 = draft2Types.find((t) => t.name === 'proveedor_custom');
+    expect(tipoV2).toBeDefined();
 
     await addRequirement({
       organizationId: org.id,
       configurationVersionId: draft2.versionId,
-      counterpartyTypeId: tipoV2.id,
-      standard: 'SARLAFT',
-      type: 'field',
-      key: 'tax_id',
-      mandatory: 'always',
-    });
-
-    await addRequirement({
-      organizationId: org.id,
-      configurationVersionId: draft2.versionId,
-      counterpartyTypeId: tipoV2.id,
+      counterpartyTypeId: tipoV2!.id,
       standard: 'SARLAFT',
       type: 'document_type',
       key: 'certificacion_bancaria',
@@ -379,8 +412,8 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
     expect(reqsV1).toHaveLength(1);
     expect(reqsV1[0].key).toBe('tax_id');
 
-    // V2 exige los dos
-    const reqsV2 = await getRequirementsForType(org.id, v2.id, tipoV2.id);
+    // V2 exige los dos (tax_id heredado por clonado + certificación bancaria nueva)
+    const reqsV2 = await getRequirementsForType(org.id, v2.id, tipoV2!.id);
     expect(reqsV2).toHaveLength(2);
     expect(reqsV2.map((r) => r.key)).toContain('tax_id');
     expect(reqsV2.map((r) => r.key)).toContain('certificacion_bancaria');
@@ -396,11 +429,12 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
       standard: 'SARLAFT',
     });
 
-    // Creamos tipo 'empleado' sin requisitos
+    // Creamos un tipo nuevo sin requisitos (los tipos base clonados del seed ya tienen
+    // requisitos, así que no sirven para probar el rechazo por matriz incompleta).
     await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'empleado',
+      name: 'empleado_custom',
       nature: 'natural_person',
     });
 
@@ -458,8 +492,10 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
         return listCounterpartyTypes(orgAlfa.id, draftAlfa.versionId, tx);
       }
     );
-    expect(alfaTypes).toHaveLength(1);
-    expect(alfaTypes[0].name).toBe('cliente_alfa');
+    // El borrador ya trae clonados los 3 tipos base (proveedor/cliente/empleado) del seed,
+    // más el 'cliente_alfa' agregado por este test.
+    expect(alfaTypes).toHaveLength(4);
+    expect(alfaTypes.map((t) => t.name)).toContain('cliente_alfa');
 
     // 2. Consulta con contexto de usuario Beta hacia datos de Alfa devuelve vacío (RLS)
     const betaReadingAlfa = await withTenantContext(
@@ -495,4 +531,269 @@ describe('HU-007: Tipos de contraparte y matriz de requisitos', () => {
       )
     ).rejects.toThrow();
   }, 30000);
+
+  it('Escenario: Crear borrador clona tipos y requisitos de la versión publicada', async () => {
+    const adminUser = await createTestAuthUser('admin-clone-v2@test-hu007.com', 'Clone User');
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'Clone Test Org' });
+    await seedBaseConfiguration(org.id, adminUser);
+
+    // Crear primera versión publicada con tipos y requisitos
+    const draft1 = await createDraftConfiguration({
+      organizationId: org.id,
+      standard: 'SARLAFT',
+    });
+
+    const tipo1 = await addCounterpartyType({
+      organizationId: org.id,
+      configurationVersionId: draft1.versionId,
+      name: 'proveedor_custom',
+      nature: 'legal_entity',
+    });
+
+    await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft1.versionId,
+      counterpartyTypeId: tipo1.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'company_name',
+      mandatory: 'always',
+    });
+
+    await publishDraftConfiguration({
+      organizationId: org.id,
+      versionId: draft1.versionId,
+      publishedBy: adminUser,
+      reason: 'Primera versión con proveedor',
+    });
+
+    // Crear nuevo borrador: debe clonar los tipos y requisitos de v1 (los 3 tipos base del
+    // seed, más el 'proveedor_custom' agregado aquí)
+    const draft2 = await createDraftConfiguration({
+      organizationId: org.id,
+      standard: 'SARLAFT',
+    });
+
+    const clonedTypes = await listCounterpartyTypes(org.id, draft2.versionId);
+    expect(clonedTypes).toHaveLength(4);
+    const clonedCustomType = clonedTypes.find((t) => t.name === 'proveedor_custom');
+    expect(clonedCustomType).toBeDefined();
+    expect(clonedCustomType?.nature).toBe('legal_entity');
+
+    const clonedReqs = await getRequirementsForType(org.id, draft2.versionId, clonedCustomType!.id);
+    expect(clonedReqs).toHaveLength(1);
+    expect(clonedReqs[0].key).toBe('company_name');
+    expect(clonedReqs[0].mandatory).toBe('always');
+  });
+
+  it('Escenario: Eliminar requisito de un borrador', async () => {
+    const adminUser = await createTestAuthUser('admin-delete-req-v2@test-hu007.com', 'Delete Req User');
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'Delete Req Test Org' });
+    await seedBaseConfiguration(org.id, adminUser);
+
+    const draft = await createDraftConfiguration({
+      organizationId: org.id,
+      standard: 'SARLAFT',
+    });
+
+    const tipo = await addCounterpartyType({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      name: 'cliente_custom',
+      nature: 'legal_entity',
+    });
+
+    const req1 = await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: tipo.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'field1',
+      mandatory: 'always',
+    });
+
+    await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: tipo.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'field2',
+      mandatory: 'always',
+    });
+
+    // Verificar que hay 2 requisitos
+    let reqs = await getRequirementsForType(org.id, draft.versionId, tipo.id);
+    expect(reqs).toHaveLength(2);
+
+    // Eliminar requisito 1
+    await removeRequirement(org.id, draft.versionId, req1.id);
+
+    // Verificar que quedó solo 1
+    reqs = await getRequirementsForType(org.id, draft.versionId, tipo.id);
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].key).toBe('field2');
+  });
+
+  it('Escenario: Eliminar tipo de contraparte borra sus requisitos en cascada', async () => {
+    const adminUser = await createTestAuthUser('admin-delete-type-v2@test-hu007.com', 'Delete Type User');
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'Delete Type Test Org' });
+    await seedBaseConfiguration(org.id, adminUser);
+
+    const draft = await createDraftConfiguration({
+      organizationId: org.id,
+      standard: 'SARLAFT',
+    });
+
+    const tipo1 = await addCounterpartyType({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      name: 'proveedor_custom',
+      nature: 'legal_entity',
+    });
+
+    const tipo2 = await addCounterpartyType({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      name: 'cliente_custom',
+      nature: 'legal_entity',
+    });
+
+    // Agregar requisitos a ambos tipos
+    await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: tipo1.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'prov_field',
+      mandatory: 'always',
+    });
+
+    await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: tipo2.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'client_field',
+      mandatory: 'always',
+    });
+
+    // Verificar que hay 5 tipos (3 base clonados del seed + los 2 de este test) y 2 requisitos
+    // totales sobre los tipos nuevos
+    const typesBefore = await listCounterpartyTypes(org.id, draft.versionId);
+    expect(typesBefore).toHaveLength(5);
+
+    const req1 = await getRequirementsForType(org.id, draft.versionId, tipo1.id);
+    expect(req1).toHaveLength(1);
+
+    // Eliminar tipo1: sus requisitos deben ser eliminados en cascada
+    await removeCounterpartyType(org.id, draft.versionId, tipo1.id);
+
+    // Verificar que quedó tipo2 y los 3 tipos base clonados (tipo1 ya no está)
+    const typesAfter = await listCounterpartyTypes(org.id, draft.versionId);
+    expect(typesAfter).toHaveLength(4);
+    expect(typesAfter.map((t) => t.id)).toContain(tipo2.id);
+    expect(typesAfter.map((t) => t.id)).not.toContain(tipo1.id);
+
+    // Verificar que los requisitos de tipo1 fueron eliminados
+    const req1After = await getRequirementsForType(org.id, draft.versionId, tipo1.id);
+    expect(req1After).toHaveLength(0);
+
+    // Verificar que los requisitos de tipo2 se mantienen
+    const req2After = await getRequirementsForType(org.id, draft.versionId, tipo2.id);
+    expect(req2After).toHaveLength(1);
+    expect(req2After[0].key).toBe('client_field');
+  });
+
+  it('Escenario: No se pueden eliminar requisitos de versión publicada', async () => {
+    const adminUser = await createTestAuthUser('admin-no-delete-v2@test-hu007.com', 'No Delete User');
+    const org = await createOrganizationWithAdmin(adminUser, { name: 'No Delete Test Org' });
+    await seedBaseConfiguration(org.id, adminUser);
+
+    const draft = await createDraftConfiguration({
+      organizationId: org.id,
+      standard: 'SARLAFT',
+    });
+
+    const tipo = await addCounterpartyType({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      name: 'empleado_custom',
+      nature: 'natural_person',
+    });
+
+    const req = await addRequirement({
+      organizationId: org.id,
+      configurationVersionId: draft.versionId,
+      counterpartyTypeId: tipo.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'employee_id',
+      mandatory: 'always',
+    });
+
+    const published = await publishDraftConfiguration({
+      organizationId: org.id,
+      versionId: draft.versionId,
+      publishedBy: adminUser,
+      reason: 'Versión empleados',
+    });
+
+    // Intentar eliminar de versión publicada debe fallar
+    await expect(
+      removeRequirement(org.id, published.id, req.id)
+    ).rejects.toThrow(/Solo se pueden eliminar requisitos de versiones en estado borrador/);
+
+    // Intentar eliminar tipo de versión publicada debe fallar
+    await expect(
+      removeCounterpartyType(org.id, published.id, tipo.id)
+    ).rejects.toThrow(/Solo se pueden eliminar tipos de contraparte de versiones en estado borrador/);
+  });
+
+  it('Escenario: Aislamiento entre organizaciones en eliminación', async () => {
+    const userAlfa = await createTestAuthUser('alfa-del-v2@test-hu007.com', 'Alfa Delete');
+    const userBeta = await createTestAuthUser('beta-del-v2@test-hu007.com', 'Beta Delete');
+
+    const orgAlfa = await createOrganizationWithAdmin(userAlfa, { name: 'Alfa Delete Org' });
+    const orgBeta = await createOrganizationWithAdmin(userBeta, { name: 'Beta Delete Org' });
+
+    await seedBaseConfiguration(orgAlfa.id, userAlfa);
+    await seedBaseConfiguration(orgBeta.id, userBeta);
+
+    const draftAlfa = await createDraftConfiguration({
+      organizationId: orgAlfa.id,
+      standard: 'SARLAFT',
+    });
+
+    const tipoAlfa = await addCounterpartyType({
+      organizationId: orgAlfa.id,
+      configurationVersionId: draftAlfa.versionId,
+      name: 'tipo_alfa',
+      nature: 'legal_entity',
+    });
+
+    const reqAlfa = await addRequirement({
+      organizationId: orgAlfa.id,
+      configurationVersionId: draftAlfa.versionId,
+      counterpartyTypeId: tipoAlfa.id,
+      standard: 'SARLAFT',
+      type: 'field',
+      key: 'alfa_field',
+      mandatory: 'always',
+    });
+
+    // Intentar eliminar requisito de Alfa pasando la organización de Beta es rechazado con un
+    // error explícito (la versión no existe para esa organización) — mismo patrón de aislamiento
+    // que el resto del código (fallar con error claro, no silenciar el intento).
+    await expect(
+      removeRequirement(orgBeta.id, draftAlfa.versionId, reqAlfa.id)
+    ).rejects.toThrow(/no encontrada/);
+
+    // Verificar que el requisito de Alfa aún existe
+    const reqsAlfa = await getRequirementsForType(orgAlfa.id, draftAlfa.versionId, tipoAlfa.id);
+    expect(reqsAlfa).toHaveLength(1);
+  });
 });

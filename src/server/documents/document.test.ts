@@ -181,7 +181,7 @@ describe('HU-013: Carga de los documentos exigidos', () => {
     const typeProveedor = await addCounterpartyType({
       organizationId: orgId,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     typeProveedorId = typeProveedor.id;
@@ -230,7 +230,7 @@ describe('HU-013: Carga de los documentos exigidos', () => {
     const dossier = await createDossierRequest({
       organizationId: orgId,
       requestedBy: adminUserId,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900999888',

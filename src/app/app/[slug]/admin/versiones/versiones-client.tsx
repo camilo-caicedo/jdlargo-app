@@ -23,7 +23,7 @@ import {
   compareVersionsAction,
   getVersionDetailAction,
 } from './actions';
-import type { ConfigurationRoleDetail, VersionDiffResult } from '@/server/configuration/service';
+import type { ConfigurationRoleDetail, VersionDiffResult, CounterpartyTypeWithRequirements } from '@/server/configuration/service';
 
 interface VersionItem {
   id: string;
@@ -32,6 +32,7 @@ interface VersionItem {
   standard: string | null;
   effectiveFrom: Date;
   publishedAt: Date | null;
+  reason?: string | null;
 }
 
 interface VersionesClientProps {
@@ -58,6 +59,8 @@ export function VersionesClient({
     versionNumber: string;
     status: string;
     roles: ConfigurationRoleDetail[];
+    counterpartyTypes: CounterpartyTypeWithRequirements[];
+    privacyNotice: { text: string; purposes: unknown } | null;
   } | null>(null);
 
   const [compareV1, setCompareV1] = useState('');
@@ -232,6 +235,7 @@ export function VersionesClient({
                   <th className="py-3 px-4">Estado</th>
                   <th className="py-3 px-4">Estándar</th>
                   <th className="py-3 px-4">Vigencia desde</th>
+                  <th className="py-3 px-4">Motivo de publicación</th>
                   <th className="py-3 px-4 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -250,6 +254,13 @@ export function VersionesClient({
                         day: 'numeric',
                       })}
                     </td>
+                    <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400 max-w-xs">
+                      {ver.reason ? (
+                        <span className="line-clamp-2 text-xs">{ver.reason}</span>
+                      ) : (
+                        <span className="text-zinc-400 italic">—</span>
+                      )}
+                    </td>
                     <td className="py-3 px-4 text-right">
                       <Button
                         variant="ghost"
@@ -258,7 +269,7 @@ export function VersionesClient({
                         className="text-xs h-7 px-2 gap-1"
                       >
                         <Eye className="w-3.5 h-3.5" />
-                        Ver roles
+                        Ver detalle
                       </Button>
                     </td>
                   </tr>
@@ -275,28 +286,82 @@ export function VersionesClient({
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-sm font-semibold">
-                Detalle de roles en v{selectedVersionDetail.versionNumber}
+                Detalle de v{selectedVersionDetail.versionNumber}
               </CardTitle>
               <CardDescription className="text-xs">
-                Roles y permisos configurados para esta versión.
+                Configuración completa: roles, tipos de contraparte, requisitos y aviso de privacidad.
               </CardDescription>
             </div>
             <Button variant="ghost" size="sm" onClick={() => setSelectedVersionDetail(null)} className="text-xs">
               Cerrar
             </Button>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {selectedVersionDetail.roles.map((r) => (
-                <div key={r.code} className="p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs">
-                  <div className="font-semibold text-zinc-900 dark:text-zinc-100">{r.name}</div>
-                  <div className="text-[11px] text-zinc-400 mt-0.5">{r.code}</div>
-                  <div className="mt-2 text-[11px] text-zinc-500">
-                    <span className="font-medium text-zinc-700 dark:text-zinc-300">{r.permissions.length}</span> permisos asignados
-                  </div>
+          <CardContent className="space-y-6">
+            {/* Roles Section */}
+            {selectedVersionDetail.roles.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Roles y Permisos</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {selectedVersionDetail.roles.map((r) => (
+                    <div key={r.code} className="p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs">
+                      <div className="font-semibold text-zinc-900 dark:text-zinc-100">{r.name}</div>
+                      <div className="text-[11px] text-zinc-400 mt-0.5">{r.code}</div>
+                      <div className="mt-2 text-[11px] text-zinc-500">
+                        <span className="font-medium text-zinc-700 dark:text-zinc-300">{r.permissions.length}</span> permisos asignados
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {/* Counterparty Types Section */}
+            {selectedVersionDetail.counterpartyTypes.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Tipos de Contraparte</h4>
+                <div className="space-y-2">
+                  {selectedVersionDetail.counterpartyTypes.map((t) => (
+                    <div key={t.id} className="p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="font-semibold text-zinc-900 dark:text-zinc-100">{t.name}</div>
+                        <span className="text-[10px] text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800">
+                          {t.nature === 'natural_person' ? 'Persona Natural' : 'Persona Jurídica'}
+                        </span>
+                      </div>
+                      {t.requirements.length > 0 && (
+                        <ul className="text-[11px] text-zinc-600 dark:text-zinc-400 mt-2 space-y-1">
+                          {t.requirements.map((req) => (
+                            <li key={req.id} className="flex items-center gap-1">
+                              <code className="px-1 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded text-[10px]">{req.key}</code>
+                              <span className="text-[10px]">
+                                {req.mandatory === 'always' ? '◆' : '○'} {req.blocking ? '[bloq]' : ''}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Privacy Notice Section */}
+            {selectedVersionDetail.privacyNotice && (
+              <div>
+                <h4 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-2">Aviso de Privacidad</h4>
+                <div className="p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 line-clamp-4">
+                    {selectedVersionDetail.privacyNotice.text}
+                  </p>
+                  {Array.isArray(selectedVersionDetail.privacyNotice.purposes) && selectedVersionDetail.privacyNotice.purposes.length > 0 && (
+                    <div className="mt-2 text-[11px] text-zinc-500">
+                      {selectedVersionDetail.privacyNotice.purposes.length} finalidades definidas
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -349,6 +414,8 @@ export function VersionesClient({
               <div className="font-semibold text-zinc-900 dark:text-zinc-100">
                 Diferencias entre v{diffResult.previousVersionNumber} y v{diffResult.newVersionNumber}:
               </div>
+
+              {/* Roles Section */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <span className="font-medium text-emerald-600">Roles agregados:</span>{' '}
@@ -373,6 +440,47 @@ export function VersionesClient({
                       </li>
                     ))}
                   </ul>
+                )}
+              </div>
+
+              {/* Counterparty Types Section */}
+              <div className="border-t border-zinc-200 dark:border-zinc-700 pt-3">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">Tipos de Contraparte:</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                  <div>
+                    <span className="text-emerald-600">Agregados:</span>{' '}
+                    {diffResult.counterpartyTypesAdded.length ? diffResult.counterpartyTypesAdded.join(', ') : 'Ninguno'}
+                  </div>
+                  <div>
+                    <span className="text-rose-600">Eliminados:</span>{' '}
+                    {diffResult.counterpartyTypesRemoved.length ? diffResult.counterpartyTypesRemoved.join(', ') : 'Ninguno'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirements Section */}
+              {diffResult.requirementsChanged.length > 0 && (
+                <div className="border-t border-zinc-200 dark:border-zinc-700 pt-3">
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">Requisitos cambiados:</span>
+                  <ul className="list-disc pl-5 mt-1 space-y-1">
+                    {diffResult.requirementsChanged.map((rc) => (
+                      <li key={rc.counterpartyTypeName}>
+                        <strong>{rc.counterpartyTypeName}:</strong>{' '}
+                        {rc.added.length > 0 && <span className="text-emerald-600">+{rc.added.join(', ')} </span>}
+                        {rc.removed.length > 0 && <span className="text-rose-600">-{rc.removed.join(', ')}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Privacy Notice Section */}
+              <div className="border-t border-zinc-200 dark:border-zinc-700 pt-3">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">Aviso de Privacidad:</span>{' '}
+                {diffResult.privacyNoticeChanged ? (
+                  <span className="text-amber-600">Cambió desde la versión anterior</span>
+                ) : (
+                  <span className="text-zinc-500">Sin cambios</span>
                 )}
               </div>
             </div>

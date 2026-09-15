@@ -31,6 +31,7 @@ interface RolesClientProps {
   roles: RoleConfigItem[];
   allPermissions: string[];
   canAdminister: boolean;
+  readOnly?: boolean;
 }
 
 export function RolesClient({
@@ -41,6 +42,7 @@ export function RolesClient({
   roles: initialRoles,
   allPermissions,
   canAdminister,
+  readOnly = false,
 }: RolesClientProps) {
   const [roles, setRoles] = useState<RoleConfigItem[]>(initialRoles);
   const [selectedRoleCode, setSelectedRoleCode] = useState<string>(
@@ -53,7 +55,7 @@ export function RolesClient({
   const selectedRole = roles.find((r) => r.code === selectedRoleCode);
 
   const handleTogglePermission = (permission: string) => {
-    if (!isDraft || !canAdminister) return;
+    if (!isDraft || !canAdminister || readOnly) return;
 
     setRoles((prevRoles) =>
       prevRoles.map((r) => {
@@ -147,14 +149,14 @@ export function RolesClient({
           </div>
         </div>
 
-        {!isDraft && canAdminister && (
+        {!isDraft && canAdminister && !readOnly && (
           <Button onClick={handleCreateDraft} disabled={isPending} size="sm" className="gap-1.5 shrink-0">
             {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
             Crear borrador para editar
           </Button>
         )}
 
-        {isDraft && canAdminister && (
+        {isDraft && canAdminister && !readOnly && (
           <Button onClick={handleSaveRoles} disabled={isPending} size="sm" className="gap-1.5 shrink-0">
             {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
             Guardar cambios de roles
@@ -217,7 +219,7 @@ export function RolesClient({
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        disabled={!isDraft || !canAdminister}
+                        disabled={!isDraft || !canAdminister || readOnly}
                         onChange={() => handleTogglePermission(perm)}
                         className="rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500 h-3.5 w-3.5"
                       />

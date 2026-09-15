@@ -171,14 +171,14 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
         { code: 'admin', name: 'Administrador', permissions: ['configuration:view', 'configuration:publish', 'configuration:administer', 'memberships:manage', 'audit:view'] },
       ],
     });
-    const typeRes = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor', nature: 'legal_entity' });
+    const typeRes = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor_custom', nature: 'legal_entity' });
     await addRequirement({ organizationId: org.id, configurationVersionId: draft.versionId, counterpartyTypeId: typeRes.id, standard: 'SARLAFT', type: 'field', key: 'tax_id', mandatory: 'always', validation: { dataType: 'string' } });
     await publishDraftConfiguration({ organizationId: org.id, versionId: draft.versionId, publishedBy: adminUser, reason: 'Config 1' });
 
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: opUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: { identificationType: 'NIT', identificationNumber: '901888001-1', declaredName: 'Proveedor Portal S.A.S.' },
       internalOwnerId: analystUser,
     });
@@ -250,14 +250,14 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
         { code: 'admin', name: 'Administrador', permissions: ['configuration:view', 'configuration:publish', 'configuration:administer', 'memberships:manage', 'audit:view'] },
       ],
     });
-    const typeRes = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor', nature: 'legal_entity' });
+    const typeRes = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor_custom', nature: 'legal_entity' });
     await addRequirement({ organizationId: org.id, configurationVersionId: draft.versionId, counterpartyTypeId: typeRes.id, standard: 'SARLAFT', type: 'field', key: 'tax_id', mandatory: 'always', validation: { dataType: 'string' } });
     await publishDraftConfiguration({ organizationId: org.id, versionId: draft.versionId, publishedBy: adminUser, reason: 'Config 2' });
 
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: opUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: { identificationType: 'NIT', identificationNumber: '901888002-2', declaredName: 'Proveedor Expirado S.A.S.' },
       internalOwnerId: analystUser,
     });
@@ -320,14 +320,14 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
         { code: 'admin', name: 'Administrador', permissions: ['configuration:view', 'configuration:publish', 'configuration:administer', 'memberships:manage', 'audit:view'] },
       ],
     });
-    const typeRes = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor', nature: 'legal_entity' });
+    const typeRes = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor_custom', nature: 'legal_entity' });
     await addRequirement({ organizationId: org.id, configurationVersionId: draft.versionId, counterpartyTypeId: typeRes.id, standard: 'SARLAFT', type: 'field', key: 'tax_id', mandatory: 'always', validation: { dataType: 'string' } });
     await publishDraftConfiguration({ organizationId: org.id, versionId: draft.versionId, publishedBy: adminUser, reason: 'Config 3' });
 
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: opUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: { identificationType: 'NIT', identificationNumber: '901888003-3', declaredName: 'Proveedor Segundo Factor S.A.S.' },
       internalOwnerId: analystUser,
     });
@@ -403,14 +403,14 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
         { code: 'admin', name: 'Administrador', permissions: ['configuration:view', 'configuration:publish', 'configuration:administer', 'memberships:manage', 'audit:view'] },
       ],
     });
-    const typeRes = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor', nature: 'legal_entity' });
+    const typeRes = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor_custom', nature: 'legal_entity' });
     await addRequirement({ organizationId: org.id, configurationVersionId: draft.versionId, counterpartyTypeId: typeRes.id, standard: 'SARLAFT', type: 'field', key: 'tax_id', mandatory: 'always', validation: { dataType: 'string' } });
     await publishDraftConfiguration({ organizationId: org.id, versionId: draft.versionId, publishedBy: adminUser, reason: 'Config 4' });
 
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: opUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: { identificationType: 'NIT', identificationNumber: '901888004-4', declaredName: 'Proveedor Revocado y Reemplazado S.A.S.' },
       internalOwnerId: analystUser,
     });
@@ -500,7 +500,7 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
       const provType = await addCounterpartyType({
         organizationId: orgA.id,
         configurationVersionId: draft.versionId,
-        name: 'proveedor',
+        name: 'proveedor_custom',
         nature: 'legal_entity',
       });
       await addRequirement({
@@ -524,7 +524,7 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
       const dossierA = await createDossierRequest({
         organizationId: orgA.id,
         requestedBy: analystUser,
-        counterpartyTypeName: 'proveedor',
+        counterpartyTypeName: 'proveedor_custom',
         party: {
           identificationType: 'NIT',
           identificationNumber: '900111222',
@@ -537,7 +537,7 @@ describe('HU-010: Acceso de la contraparte por enlace (Portal público privilegi
       const dossierB = await createDossierRequest({
         organizationId: orgA.id,
         requestedBy: analystUser,
-        counterpartyTypeName: 'proveedor',
+        counterpartyTypeName: 'proveedor_custom',
         party: {
           identificationType: 'NIT',
           identificationNumber: '900333444',

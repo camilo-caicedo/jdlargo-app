@@ -239,3 +239,92 @@ export async function assertRequirementMatrixIsComplete(
     );
   }
 }
+
+export async function removeRequirement(
+  organizationId: string,
+  configurationVersionId: string,
+  requirementId: string,
+  txClient?: DrizzleClient,
+): Promise<void> {
+  const client = txClient || db;
+
+  // Verify that the configuration version is a draft
+  const [version] = await client
+    .select()
+    .from(configurationVersions)
+    .where(
+      and(
+        eq(configurationVersions.organizationId, organizationId),
+        eq(configurationVersions.id, configurationVersionId),
+      ),
+    );
+
+  if (!version) {
+    throw new Error('Versión de configuración no encontrada');
+  }
+
+  if (version.status !== 'draft') {
+    throw new Error('Solo se pueden eliminar requisitos de versiones en estado borrador');
+  }
+
+  // Delete the requirement
+  await client
+    .delete(requirements)
+    .where(
+      and(
+        eq(requirements.id, requirementId),
+        eq(requirements.organizationId, organizationId),
+        eq(requirements.configurationVersionId, configurationVersionId),
+      ),
+    );
+}
+
+export async function removeCounterpartyType(
+  organizationId: string,
+  configurationVersionId: string,
+  counterpartyTypeId: string,
+  txClient?: DrizzleClient,
+): Promise<void> {
+  const client = txClient || db;
+
+  // Verify that the configuration version is a draft
+  const [version] = await client
+    .select()
+    .from(configurationVersions)
+    .where(
+      and(
+        eq(configurationVersions.organizationId, organizationId),
+        eq(configurationVersions.id, configurationVersionId),
+      ),
+    );
+
+  if (!version) {
+    throw new Error('Versión de configuración no encontrada');
+  }
+
+  if (version.status !== 'draft') {
+    throw new Error('Solo se pueden eliminar tipos de contraparte de versiones en estado borrador');
+  }
+
+  // First delete all requirements for this type (no ON DELETE CASCADE, so do it manually)
+  await client
+    .delete(requirements)
+    .where(
+      and(
+        eq(requirements.organizationId, organizationId),
+        eq(requirements.configurationVersionId, configurationVersionId),
+        eq(requirements.counterpartyTypeId, counterpartyTypeId),
+      ),
+    );
+
+  // Then delete the type
+  await client
+    .delete(counterpartyTypes)
+    .where(
+      and(
+        eq(counterpartyTypes.id, counterpartyTypeId),
+        eq(counterpartyTypes.organizationId, organizationId),
+        eq(counterpartyTypes.configurationVersionId, configurationVersionId),
+      ),
+    );
+}

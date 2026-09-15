@@ -170,14 +170,14 @@ describe('HU-063: Expiración y reactivación del acceso de la contraparte', () 
         { code: 'admin', name: 'Administrador', permissions: ['configuration:view', 'configuration:publish'] },
       ],
     });
-    const cpType = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor', nature: 'legal_entity' });
+    const cpType = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor_custom', nature: 'legal_entity' });
     await addRequirement({ organizationId: org.id, configurationVersionId: draft.versionId, counterpartyTypeId: cpType.id, standard: 'SARLAFT', type: 'field', key: 'tax_id', mandatory: 'always', validation: { dataType: 'string' } });
     await publishDraftConfiguration({ organizationId: org.id, versionId: draft.versionId, publishedBy: admin, reason: 'Config 1' });
 
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: analyst,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: { identificationType: 'NIT', identificationNumber: '900111222-1', declaredName: 'Alfa Contraparte S.A.S.' },
       internalOwnerId: analyst,
     });
@@ -325,7 +325,7 @@ describe('HU-063: Expiración y reactivación del acceso de la contraparte', () 
     await seedBaseConfiguration(org.id, admin);
 
     const draft = await createDraftConfiguration({ organizationId: org.id, standard: 'SARLAFT' });
-    const cpType = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor', nature: 'legal_entity' });
+    const cpType = await addCounterpartyType({ organizationId: org.id, configurationVersionId: draft.versionId, name: 'proveedor_custom', nature: 'legal_entity' });
     await addRequirement({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
@@ -341,7 +341,7 @@ describe('HU-063: Expiración y reactivación del acceso de la contraparte', () 
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: admin,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: { identificationType: 'NIT', identificationNumber: '900222333-2', declaredName: 'Beta Avanzado S.A.S.' },
       internalOwnerId: admin,
     });
@@ -390,7 +390,7 @@ describe('HU-063: Expiración y reactivación del acceso de la contraparte', () 
     const dossierBeta = await createDossierRequest({
       organizationId: orgBeta.id,
       requestedBy: adminBeta,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: { identificationType: 'NIT', identificationNumber: '900999888-9', declaredName: 'Beta Iso S.A.S.' },
       internalOwnerId: adminBeta,
     });

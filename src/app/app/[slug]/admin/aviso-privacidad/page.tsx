@@ -62,13 +62,13 @@ export default async function ConfiguracionPage({
   const canAdministerCheck = await checkUserPermission(userId, organizationId, 'configuration:administer');
   const canPublishCheck = await checkUserPermission(userId, organizationId, 'configuration:publish');
 
-  // 2. Fetch versions: draft first if exists, otherwise active published
-  const draftVersion = await getDraftConfiguration(organizationId);
-  const activeVersion = await getActiveConfiguration(organizationId);
+  // 2. Fetch versions in parallel
+  const [draftVersion, activeVersion] = await Promise.all([
+    getDraftConfiguration(organizationId),
+    getActiveConfiguration(organizationId),
+  ]);
 
-  const currentVersion = draftVersion || activeVersion;
-
-  if (!currentVersion) {
+  if (!draftVersion && !activeVersion) {
     return (
       <div className="max-w-4xl mx-auto mt-6 space-y-6">
         <div className="flex items-center gap-3">
@@ -87,8 +87,11 @@ export default async function ConfiguracionPage({
     );
   }
 
-  const isDraft = currentVersion.status === 'draft';
-  const notice = await getPrivacyNoticeForVersion(organizationId, currentVersion.id);
+  // Load notices for both versions (if they exist)
+  const [draftNotice, activeNotice] = await Promise.all([
+    draftVersion ? getPrivacyNoticeForVersion(organizationId, draftVersion.id) : Promise.resolve(null),
+    activeVersion ? getPrivacyNoticeForVersion(organizationId, activeVersion.id) : Promise.resolve(null),
+  ]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
@@ -105,20 +108,71 @@ export default async function ConfiguracionPage({
         </p>
       </div>
 
-      <PrivacyNoticeEditor
-        organizationId={organizationId}
-        slug={slug}
-        isDraft={isDraft}
-        versionId={currentVersion.id}
-        versionNumber={currentVersion.versionNumber}
-        initialText={notice?.text || ''}
-        initialDataController={notice?.dataController || currentMembership.organizationName || ''}
-        initialDataProcessor={notice?.dataProcessor || 'Plataforma JD Largo'}
-        initialRightsChannels={notice?.rightsChannels || ''}
-        initialPurposes={notice?.purposes || []}
-        canAdminister={canAdministerCheck.granted}
-        canPublish={canPublishCheck.granted}
-      />
+      {draftVersion && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-amber-700 dark:text-amber-300 mb-2">
+              Borrador en edición (Versión {draftVersion.versionNumber})
+            </h3>
+            <PrivacyNoticeEditor
+              organizationId={organizationId}
+              slug={slug}
+              isDraft={true}
+              versionId={draftVersion.id}
+              versionNumber={draftVersion.versionNumber}
+              initialText={draftNotice?.text || ''}
+              initialDataController={draftNotice?.dataController || currentMembership.organizationName || ''}
+              initialDataProcessor={draftNotice?.dataProcessor || 'Plataforma JD Largo'}
+              initialRightsChannels={draftNotice?.rightsChannels || ''}
+              initialPurposes={draftNotice?.purposes || []}
+              canAdminister={canAdministerCheck.granted}
+              canPublish={canPublishCheck.granted}
+              readOnly={false}
+            />
+          </div>
+
+          {activeVersion && (
+            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-6 mt-6">
+              <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
+                Versión publicada actual (Versión {activeVersion.versionNumber})
+              </h3>
+              <PrivacyNoticeEditor
+                organizationId={organizationId}
+                slug={slug}
+                isDraft={false}
+                versionId={activeVersion.id}
+                versionNumber={activeVersion.versionNumber}
+                initialText={activeNotice?.text || ''}
+                initialDataController={activeNotice?.dataController || currentMembership.organizationName || ''}
+                initialDataProcessor={activeNotice?.dataProcessor || 'Plataforma JD Largo'}
+                initialRightsChannels={activeNotice?.rightsChannels || ''}
+                initialPurposes={activeNotice?.purposes || []}
+                canAdminister={canAdministerCheck.granted}
+                canPublish={canPublishCheck.granted}
+                readOnly={true}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {!draftVersion && activeVersion && (
+        <PrivacyNoticeEditor
+          organizationId={organizationId}
+          slug={slug}
+          isDraft={false}
+          versionId={activeVersion.id}
+          versionNumber={activeVersion.versionNumber}
+          initialText={activeNotice?.text || ''}
+          initialDataController={activeNotice?.dataController || currentMembership.organizationName || ''}
+          initialDataProcessor={activeNotice?.dataProcessor || 'Plataforma JD Largo'}
+          initialRightsChannels={activeNotice?.rightsChannels || ''}
+          initialPurposes={activeNotice?.purposes || []}
+          canAdminister={canAdministerCheck.granted}
+          canPublish={canPublishCheck.granted}
+          readOnly={false}
+        />
+      )}
     </div>
   );
 }

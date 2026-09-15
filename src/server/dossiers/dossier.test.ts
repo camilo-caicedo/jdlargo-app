@@ -16,6 +16,7 @@ import {
 import {
   addCounterpartyType,
   addRequirement,
+  listCounterpartyTypes,
 } from '../configuration/requirement-matrix';
 import { withTenantContext } from '../db/client';
 import {
@@ -162,7 +163,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
       role: 'compliance_analyst',
     });
 
-    // Publicar versión con tipo de contraparte 'proveedor'
+    // Publicar versión con tipo de contraparte 'proveedor_custom'
     const draft = await createDraftConfiguration({
       organizationId: org.id,
       standard: 'SARLAFT',
@@ -171,7 +172,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const typeRes = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -195,11 +196,11 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
 
     const deadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 días en el futuro
 
-    // Cuando crea una solicitud para la contraparte 'Ficticia S.A.S.' de tipo 'proveedor'
+    // Cuando crea una solicitud para la contraparte 'Ficticia S.A.S.' de tipo 'proveedor_custom'
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: operationalUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900123456-1',
@@ -262,7 +263,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const typeRes = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
 
@@ -303,7 +304,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const dossier = await createDossierRequest({
       organizationId: org.id,
       requestedBy: operationalUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '800555666-1',
@@ -339,7 +340,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const typeV2 = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draftV2.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -363,7 +364,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const dossierOld = await createDossierRequest({
       organizationId: org.id,
       requestedBy: operationalUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900999000-1',
@@ -372,24 +373,13 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
       internalOwnerId: internalOwner,
     });
 
-    // Oficial de cumplimiento publica una versión posterior con requisitos adicionales
+    // Oficial de cumplimiento publica una versión posterior con requisitos adicionales.
+    // draftV3 ya nace con 'proveedor_custom' (y su tax_id) clonados de la versión activa
+    // (draftV2 publicado) — no hace falta volver a declararlos.
     const draftV3 = await createDraftConfiguration({ organizationId: org.id, standard: 'SARLAFT' });
-    const typeV3 = await addCounterpartyType({
-      organizationId: org.id,
-      configurationVersionId: draftV3.versionId,
-      name: 'proveedor',
-      nature: 'legal_entity',
-    });
-    await addRequirement({
-      organizationId: org.id,
-      configurationVersionId: draftV3.versionId,
-      counterpartyTypeId: typeV3.id,
-      standard: 'SARLAFT',
-      type: 'field',
-      key: 'tax_id',
-      mandatory: 'always',
-      validation: { dataType: 'string' },
-    });
+    const draftV3Types = await listCounterpartyTypes(org.id, draftV3.versionId);
+    const typeV3 = draftV3Types.find((t) => t.name === 'proveedor_custom')!;
+    expect(typeV3).toBeDefined();
     await addRequirement({
       organizationId: org.id,
       configurationVersionId: draftV3.versionId,
@@ -411,7 +401,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const dossierNew = await createDossierRequest({
       organizationId: org.id,
       requestedBy: operationalUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         identificationType: 'NIT',
         identificationNumber: '900999000-2',
@@ -445,7 +435,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
       createDossierRequest({
         organizationId: org.id,
         requestedBy: operationalUser,
-        counterpartyTypeName: 'proveedor',
+        counterpartyTypeName: 'proveedor_custom',
         party: {
           identificationType: 'NIT',
           identificationNumber: '900888777-1',
@@ -487,7 +477,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const typeAlfa = await addCounterpartyType({
       organizationId: orgAlfa.id,
       configurationVersionId: draftAlfa.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -507,7 +497,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const typeBeta = await addCounterpartyType({
       organizationId: orgBeta.id,
       configurationVersionId: draftBeta.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -532,7 +522,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const dossierAlfa = await createDossierRequest({
       organizationId: orgAlfa.id,
       requestedBy: userAlfa,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: sharedParty,
       internalOwnerId: adminAlfa,
     });
@@ -540,7 +530,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const dossierBeta = await createDossierRequest({
       organizationId: orgBeta.id,
       requestedBy: userBeta,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: sharedParty,
       internalOwnerId: adminBeta,
     });
@@ -590,7 +580,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const typeRes = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -610,7 +600,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
       createDossierRequest({
         organizationId: org.id,
         requestedBy: auditorUser,
-        counterpartyTypeName: 'proveedor',
+        counterpartyTypeName: 'proveedor_custom',
         party: {
           identificationType: 'NIT',
           identificationNumber: '900111222-3',
@@ -646,7 +636,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const typeRes = await addCounterpartyType({
       organizationId: org.id,
       configurationVersionId: draft.versionId,
-      name: 'proveedor',
+      name: 'proveedor_custom',
       nature: 'legal_entity',
     });
     await addRequirement({
@@ -676,7 +666,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const dossier1 = await createDossierRequest({
       organizationId: org.id,
       requestedBy: operationalUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: sharedPartyInput,
       internalOwnerId: adminUser,
     });
@@ -685,7 +675,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
     const dossier2 = await createDossierRequest({
       organizationId: org.id,
       requestedBy: operationalUser,
-      counterpartyTypeName: 'proveedor',
+      counterpartyTypeName: 'proveedor_custom',
       party: {
         ...sharedPartyInput,
         declaredName: 'Proveedor Frecuente S.A.S. - Sucursal 2',
@@ -751,7 +741,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
       const cpType = await addCounterpartyType({
         organizationId: org.id,
         configurationVersionId: draft.versionId,
-        name: 'proveedor',
+        name: 'proveedor_custom',
         nature: 'legal_entity',
       });
       await addRequirement({
@@ -775,7 +765,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
       const dossier = await createDossierRequest({
         organizationId: org.id,
         requestedBy: analystUser,
-        counterpartyTypeName: 'proveedor',
+        counterpartyTypeName: 'proveedor_custom',
         party: {
           identificationType: 'NIT',
           identificationNumber: '900111222-3',
@@ -905,7 +895,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
       const cpType = await addCounterpartyType({
         organizationId: org.id,
         configurationVersionId: draft.versionId,
-        name: 'proveedor',
+        name: 'proveedor_custom',
         nature: 'legal_entity',
       });
 
@@ -943,7 +933,7 @@ describe('HU-008: Crear la solicitud de vinculación y abrir el expediente', () 
       const dossier = await createDossierRequest({
         organizationId: org.id,
         requestedBy: opUser,
-        counterpartyTypeName: 'proveedor',
+        counterpartyTypeName: 'proveedor_custom',
         party: {
           identificationType: 'NIT',
           identificationNumber: '901234567-9',
