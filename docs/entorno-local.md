@@ -64,3 +64,40 @@ No hace falta ningún paso extra: `npm run db:migrate:local` vuelve a leer el di
 completo. Si el stack local ya tiene el esquema viejo aplicado y quieres repartir desde
 cero, `npx supabase db reset` reinicia el contenedor de Postgres vacío antes de
 volver a correr `db:migrate:local`.
+
+## Antivirus local (ClamAV, HU-013)
+
+`src/lib/antivirus.ts` escanea todo documento subido antes de aceptarlo, y **falla cerrado**
+si `CLAMAV_HOST` no está configurado — sin eso, subir cualquier archivo revienta con
+`Antivirus no configurado: falta CLAMAV_HOST`. Hay una salida explícita para desarrollo sin
+un ClamAV real (`SKIP_ANTIVIRUS_SCAN=true`), pero eso nunca escanea de verdad — no sirve para
+probar el flujo completo de HU-013 (detección real de un archivo malicioso).
+
+Para tener un ClamAV real local, no hace falta instalar nada en el sistema — un contenedor
+Docker basta (mismo Docker/colima que ya usa el stack de Supabase):
+
+```bash
+docker run -d --name clamav -p 3310:3310 clamav/clamav:stable
+```
+
+La primera vez, el contenedor descarga las firmas de virus (`freshclam`) antes de que `clamd`
+acepte conexiones — pesa varios cientos de MB y puede tardar unos minutos. `docker logs -f
+clamav` para ver cuándo terminó.
+
+Con el contenedor arriba, en `.env.local` (para `npm run dev`) y/o `.env.test` (para
+`npm run test`):
+
+```bash
+CLAMAV_HOST=127.0.0.1
+CLAMAV_PORT=3310
+```
+
+Y quitar `SKIP_ANTIVIRUS_SCAN` de ese mismo archivo — con `CLAMAV_HOST` configurado, el
+código lo usa en vez del bypass. Para probar que detecta algo de verdad, el archivo de
+prueba estándar de la industria es [EICAR](https://www.eicar.org/download-anti-malware-testfile/)
+— no es un virus real, pero todo antivirus (incluido ClamAV) lo marca como infectado a
+propósito, así se puede probar el camino "documento infectado rechazado" sin manipular
+malware real.
+
+`docker stop clamav && docker rm clamav` para bajarlo cuando no se necesite (consume RAM en
+reposo por las firmas cargadas en memoria).
