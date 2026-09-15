@@ -3,9 +3,10 @@ import { db, DrizzleClient, DatabaseTransaction } from '../db/client';
 import { assertions } from '../db/schema';
 import { logAuditEvent } from '../audit/service';
 import { enforceUserPermission } from '../auth/access-control';
+import { markAiExecutionValidated } from '../ai/execution';
 
 export type AssertionOrigin = 'declared' | 'extracted' | 'verified' | 'evaluated';
-export type AssertionStatus = 'active' | 'discarded';
+export type AssertionStatus = 'pending_validation' | 'active' | 'discarded';
 
 export interface AiModelMetadata {
   model: string;
@@ -57,6 +58,8 @@ export interface AssertionDetail {
   resolutionNote: string | null;
   resolvedBy: string | null;
   resolvedAt: Date | null;
+  validatedBy: string | null;
+  validatedAt: Date | null;
   createdAt: Date;
 }
 
@@ -86,20 +89,24 @@ export async function registerAssertion(
     throw new Error(`Origen de afirmación inválido: ${input.origin}`);
   }
 
-  // 2. Validate extracted requirements: confidence, evidence and aiExecutionId mandatory
+  // 2. Validate extracted requirements based on source (AI vs human correction)
   if (input.origin === 'extracted') {
-    if (!input.confidence) {
-      throw new Error("Una afirmación con origen 'extracted' exige un nivel de confianza registrado");
+    // If extracted from AI (no producedBy): require confidence, evidence, aiExecutionId
+    if (!input.producedBy) {
+      if (!input.confidence) {
+        throw new Error("Una afirmación con origen 'extracted' de IA exige un nivel de confianza registrado");
+      }
+      const confVal = parseFloat(input.confidence);
+      if (isNaN(confVal) || confVal < 0 || confVal > 1) {
+        throw new Error('El nivel de confianza debe ser un número entre 0.00 y 1.00');
+      }
+      if (!input.aiExecutionId) {
+        throw new Error("Una afirmación con origen 'extracted' exige una ejecución de IA asociada (aiExecutionId)");
+      }
     }
-    const confVal = parseFloat(input.confidence);
-    if (isNaN(confVal) || confVal < 0 || confVal > 1) {
-      throw new Error('El nivel de confianza debe ser un número entre 0.00 y 1.00');
-    }
+    // Evidence is always required for extracted (whether from AI or human correction)
     if (!input.evidenceId) {
       throw new Error("Una afirmación con origen 'extracted' exige una evidencia asociada (documento)");
-    }
-    if (!input.aiExecutionId) {
-      throw new Error("Una afirmación con origen 'extracted' exige una ejecución de IA asociada (aiExecutionId)");
     }
   }
 
@@ -116,7 +123,10 @@ export async function registerAssertion(
   }
 
   const execute = async (tx: DatabaseTransaction) => {
-    // 5. Insert assertion
+    // 5. Determine status: extracted from AI → pending_validation, everything else (or human correction) → active
+    const status: AssertionStatus = input.origin === 'extracted' && !input.producedBy ? 'pending_validation' : 'active';
+
+    // 6. Insert assertion
     const [created] = await tx
       .insert(assertions)
       .values({
@@ -132,11 +142,11 @@ export async function registerAssertion(
         evidenceId: input.evidenceId || null,
         confidence: input.confidence || null,
         aiModelMetadata: input.aiModelMetadata || null,
-        status: 'active',
+        status,
       })
       .returning();
 
-    // 6. Register in audit_log via transversal logAuditEvent
+    // 7. Register in audit_log via transversal logAuditEvent
     await logAuditEvent(
       {
         organizationId: input.organizationId,
@@ -153,6 +163,7 @@ export async function registerAssertion(
           party_id: input.partyId,
           field: input.field,
           origin: input.origin,
+          status,
           ai_execution_id: input.aiExecutionId,
           evidence_id: input.evidenceId,
           confidence: input.confidence,
@@ -255,6 +266,18 @@ export async function resolveDiscrepancy(
 
     const now = new Date();
 
+    // Promote selected assertion from pending_validation to active if needed
+    if (selected.status === 'pending_validation') {
+      await tx
+        .update(assertions)
+        .set({
+          status: 'active',
+          validatedBy: input.resolvedBy,
+          validatedAt: now,
+        })
+        .where(eq(assertions.id, input.selectedAssertionId));
+    }
+
     // Mark other assertions as discarded (trigger permits updating status, note, resolvedBy, resolvedAt)
     for (const other of otherAssertions) {
       await tx
@@ -353,8 +376,9 @@ export async function getLatestDeclaredValuesForDossier(
 }
 
 /**
- * Retrieves all active assertions for a dossier regardless of field or origin.
- * (HU-019)
+ * Retrieves all active and pending_validation assertions for a dossier regardless of field or origin.
+ * (HU-019, HU-020)
+ * Includes pending_validation so UI can show pending extractions for confirmation/correction.
  */
 export async function getActiveAssertionsForDossier(
   organizationId: string,
@@ -370,16 +394,327 @@ export async function getActiveAssertionsForDossier(
       and(
         eq(assertions.organizationId, organizationId),
         eq(assertions.dossierId, dossierId),
-        eq(assertions.status, 'active'),
+        // Include both active and pending_validation to allow UI to handle both states
       ),
     )
     .orderBy(desc(assertions.producedAt));
 
-  return rows.map((r) => ({
-    ...r,
-    origin: r.origin as AssertionOrigin,
-    status: r.status as AssertionStatus,
-    aiModelMetadata: r.aiModelMetadata as AiModelMetadata | null,
-  }));
+  return rows
+    .filter((r) => r.status === 'active' || r.status === 'pending_validation')
+    .map((r) => ({
+      ...r,
+      origin: r.origin as AssertionOrigin,
+      status: r.status as AssertionStatus,
+      aiModelMetadata: r.aiModelMetadata as AiModelMetadata | null,
+    }));
+}
+
+export interface ValidateExtractedAssertionInput {
+  organizationId: string;
+  dossierId: string;
+  assertionId: string;
+  result: 'confirmed' | 'discarded';
+  reason?: string;
+  validatedBy: string;
+}
+
+/**
+ * Confirms or discards a pending_validation extracted assertion.
+ * Confirmed: status → active, validatedBy/validatedAt set.
+ * Discarded: status → discarded, resolutionNote/resolvedBy/resolvedAt set.
+ * (HU-020)
+ */
+export async function validateExtractedAssertion(
+  input: ValidateExtractedAssertionInput,
+  txClient?: DrizzleClient,
+): Promise<AssertionDetail> {
+  await enforceUserPermission(
+    {
+      userId: input.validatedBy,
+      organizationId: input.organizationId,
+    },
+    'dossier:review',
+    {
+      dossierId: input.dossierId,
+    },
+    txClient,
+  );
+
+  const execute = async (tx: DatabaseTransaction) => {
+    // Get the assertion
+    const [assertion] = await tx
+      .select()
+      .from(assertions)
+      .where(
+        and(
+          eq(assertions.organizationId, input.organizationId),
+          eq(assertions.dossierId, input.dossierId),
+          eq(assertions.id, input.assertionId),
+        ),
+      );
+
+    if (!assertion) {
+      throw new Error('La afirmación no existe');
+    }
+    if (assertion.origin !== 'extracted' || assertion.status !== 'pending_validation') {
+      throw new Error('Solo se pueden validar afirmaciones extraídas en estado pendiente de validación');
+    }
+
+    const now = new Date();
+
+    if (input.result === 'confirmed') {
+      await tx
+        .update(assertions)
+        .set({
+          status: 'active',
+          validatedBy: input.validatedBy,
+          validatedAt: now,
+        })
+        .where(eq(assertions.id, input.assertionId));
+
+      if (assertion.aiExecutionId) {
+        await markAiExecutionValidated(
+          {
+            organizationId: input.organizationId,
+            aiExecutionId: assertion.aiExecutionId,
+            validatedBy: input.validatedBy,
+            finalResult: { field: assertion.field, value: assertion.value, result: 'confirmed' },
+          },
+          tx,
+        );
+      }
+
+      await logAuditEvent(
+        {
+          organizationId: input.organizationId,
+          actorType: 'user',
+          actorUserId: input.validatedBy,
+          action: 'assertion.validation_confirmed',
+          entity: 'assertion',
+          entityId: input.assertionId,
+          metadata: {
+            assertion_id: input.assertionId,
+            dossier_id: input.dossierId,
+            field: assertion.field,
+          },
+          origin: { actor: 'user', service: 'validateExtractedAssertion' },
+        },
+        tx,
+      );
+    } else {
+      if (!input.reason || input.reason.trim() === '') {
+        throw new Error('Descartar una afirmación exige una justificación');
+      }
+
+      await tx
+        .update(assertions)
+        .set({
+          status: 'discarded',
+          resolutionNote: input.reason,
+          resolvedBy: input.validatedBy,
+          resolvedAt: now,
+        })
+        .where(eq(assertions.id, input.assertionId));
+
+      if (assertion.aiExecutionId) {
+        await markAiExecutionValidated(
+          {
+            organizationId: input.organizationId,
+            aiExecutionId: assertion.aiExecutionId,
+            validatedBy: input.validatedBy,
+            finalResult: { field: assertion.field, value: assertion.value, result: 'discarded' },
+          },
+          tx,
+        );
+      }
+
+      await logAuditEvent(
+        {
+          organizationId: input.organizationId,
+          actorType: 'user',
+          actorUserId: input.validatedBy,
+          action: 'assertion.validation_discarded',
+          entity: 'assertion',
+          entityId: input.assertionId,
+          reason: input.reason,
+          metadata: {
+            assertion_id: input.assertionId,
+            dossier_id: input.dossierId,
+            field: assertion.field,
+            reason: input.reason,
+          },
+          origin: { actor: 'user', service: 'validateExtractedAssertion' },
+        },
+        tx,
+      );
+    }
+
+    const updated = await tx
+      .select()
+      .from(assertions)
+      .where(eq(assertions.id, input.assertionId));
+
+    return {
+      ...updated[0],
+      origin: updated[0].origin as AssertionOrigin,
+      status: updated[0].status as AssertionStatus,
+      aiModelMetadata: updated[0].aiModelMetadata as AiModelMetadata | null,
+    };
+  };
+
+  if (txClient && 'execute' in txClient) {
+    return execute(txClient as DatabaseTransaction);
+  }
+  return db.transaction(execute);
+}
+
+export interface CorrectExtractedAssertionInput {
+  organizationId: string;
+  dossierId: string;
+  partyId: string;
+  configurationVersionId: string;
+  originalAssertionId: string;
+  correctedValue: unknown;
+  reason: string;
+  correctedBy: string;
+  evidenceId: string;
+}
+
+/**
+ * Corrects an extracted assertion by discarding it and creating a new one.
+ * Original assertion: status → discarded, resolutionNote set.
+ * New assertion: origin extracted, producedBy set (human correction), status → active.
+ * (HU-020)
+ */
+export async function correctExtractedAssertion(
+  input: CorrectExtractedAssertionInput,
+  txClient?: DrizzleClient,
+): Promise<{ discarded: AssertionDetail; created: AssertionDetail }> {
+  await enforceUserPermission(
+    {
+      userId: input.correctedBy,
+      organizationId: input.organizationId,
+    },
+    'dossier:review',
+    {
+      dossierId: input.dossierId,
+    },
+    txClient,
+  );
+
+  const execute = async (tx: DatabaseTransaction) => {
+    // Get the original assertion
+    const [original] = await tx
+      .select()
+      .from(assertions)
+      .where(
+        and(
+          eq(assertions.organizationId, input.organizationId),
+          eq(assertions.dossierId, input.dossierId),
+          eq(assertions.id, input.originalAssertionId),
+        ),
+      );
+
+    if (!original) {
+      throw new Error('La afirmación original no existe');
+    }
+    if (original.origin !== 'extracted' || (original.status !== 'pending_validation' && original.status !== 'active')) {
+      throw new Error('Solo se pueden corregir afirmaciones extraídas en estado pendiente o activo');
+    }
+
+    const now = new Date();
+
+    // Discard original
+    await tx
+      .update(assertions)
+      .set({
+        status: 'discarded',
+        resolutionNote: input.reason,
+        resolvedBy: input.correctedBy,
+        resolvedAt: now,
+      })
+      .where(eq(assertions.id, input.originalAssertionId));
+
+    // Create corrected version (extracted with producedBy = human, so status active)
+    const [created] = await tx
+      .insert(assertions)
+      .values({
+        organizationId: input.organizationId,
+        dossierId: input.dossierId,
+        partyId: input.partyId,
+        configurationVersionId: input.configurationVersionId,
+        field: original.field,
+        value: input.correctedValue,
+        origin: 'extracted',
+        producedBy: input.correctedBy,
+        evidenceId: input.evidenceId,
+        status: 'active',
+      })
+      .returning();
+
+    // Mark AI execution as validated with correction result
+    if (original.aiExecutionId) {
+      await markAiExecutionValidated(
+        {
+          organizationId: input.organizationId,
+          aiExecutionId: original.aiExecutionId,
+          validatedBy: input.correctedBy,
+          finalResult: {
+            field: original.field,
+            value: input.correctedValue,
+            result: 'corrected',
+            previousValue: original.value,
+          },
+        },
+        tx,
+      );
+    }
+
+    await logAuditEvent(
+      {
+        organizationId: input.organizationId,
+        actorType: 'user',
+        actorUserId: input.correctedBy,
+        action: 'assertion.validation_corrected',
+        entity: 'assertion',
+        entityId: input.originalAssertionId,
+        reason: input.reason,
+        metadata: {
+          original_assertion_id: input.originalAssertionId,
+          corrected_assertion_id: created.id,
+          dossier_id: input.dossierId,
+          field: original.field,
+          previous_value: original.value,
+          corrected_value: input.correctedValue,
+          reason: input.reason,
+        },
+        origin: { actor: 'user', service: 'correctExtractedAssertion' },
+      },
+      tx,
+    );
+
+    return {
+      discarded: {
+        ...original,
+        status: 'discarded' as AssertionStatus,
+        resolutionNote: input.reason,
+        resolvedBy: input.correctedBy,
+        resolvedAt: now,
+        origin: original.origin as AssertionOrigin,
+        aiModelMetadata: original.aiModelMetadata as AiModelMetadata | null,
+      },
+      created: {
+        ...created,
+        origin: created.origin as AssertionOrigin,
+        status: created.status as AssertionStatus,
+        aiModelMetadata: created.aiModelMetadata as AiModelMetadata | null,
+      },
+    };
+  };
+
+  if (txClient && 'execute' in txClient) {
+    return execute(txClient as DatabaseTransaction);
+  }
+  return db.transaction(execute);
 }
 

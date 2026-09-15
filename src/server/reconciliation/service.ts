@@ -56,6 +56,7 @@ export interface FieldReconciliationRow {
   extractedAssertionId: string | null;
   extractedSource: string | null;      // evidenceId (documento) de la afirmación extraída
   extractedConfidence: string | null;
+  extractedStatus: 'pending_validation' | 'active' | 'discarded' | null; // Estado de la afirmación extraída
   status: FieldReconciliationStatus;
   requiredAction: string;              // 'Ninguna' | 'Resolver discrepancia'
   isBlocking: boolean;
@@ -177,6 +178,7 @@ export async function getFieldReconciliation(
       extractedAssertionId: extracted ? extracted.id : null,
       extractedSource: extracted ? extracted.evidenceId : null,
       extractedConfidence: extracted ? extracted.confidence : null,
+      extractedStatus: extracted ? (extracted.status as 'pending_validation' | 'active' | 'discarded') : null,
       status: isDiscrepancy ? 'discrepancia' : 'concordante',
       requiredAction: isDiscrepancy ? 'Resolver discrepancia' : 'Ninguna',
       isBlocking,

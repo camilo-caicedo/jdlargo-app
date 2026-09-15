@@ -210,3 +210,31 @@ export async function getAiExecutionsByDossier(
     finalResult: row.finalResult,
   }));
 }
+
+export interface MarkAiExecutionValidatedInput {
+  organizationId: string;
+  aiExecutionId: string;
+  validatedBy: string;
+  finalResult: unknown; // { field, value, result: 'confirmed'|'discarded'|'corrected' }
+}
+
+/**
+ * Marks an AI execution as human-validated with final result.
+ * Called after validateExtractedAssertion or correctExtractedAssertion.
+ * (HU-020)
+ */
+export async function markAiExecutionValidated(
+  input: MarkAiExecutionValidatedInput,
+  txClient?: DrizzleClient,
+): Promise<void> {
+  const client = txClient || db;
+
+  await client
+    .update(aiExecutions)
+    .set({
+      validatedBy: input.validatedBy,
+      validatedAt: new Date(),
+      finalResult: input.finalResult,
+    })
+    .where(and(eq(aiExecutions.id, input.aiExecutionId), eq(aiExecutions.organizationId, input.organizationId)));
+}

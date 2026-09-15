@@ -117,10 +117,12 @@ export const assertions = pgTable('assertions', {
   confidence: text('confidence'),
   aiModelMetadata: jsonb('ai_model_metadata'),
   aiExecutionId: uuid('ai_execution_id').references(() => aiExecutions.id),
-  status: text('status', { enum: ['active', 'discarded'] }).notNull().default('active'),
+  status: text('status', { enum: ['pending_validation', 'active', 'discarded'] }).notNull().default('active'),
   resolutionNote: text('resolution_note'),
   resolvedBy: uuid('resolved_by').references(() => users.id),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  validatedBy: uuid('validated_by').references(() => users.id),
+  validatedAt: timestamp('validated_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS();
 
