@@ -225,6 +225,31 @@ describe('HU-013: Carga de los documentos exigidos', () => {
       mandatory: 'optional',
     });
 
+    // HU-021: Vigencias y estados del documento
+    // Add document types for vigencia tests
+    const vienciaDocTypes = [
+      { key: 'doc_rut_expire_test', validity: { mode: 'duration_from_issued' as const, durationDays: 30 } },
+      { key: 'doc_rut_no_exp', validity: { mode: 'no_expiration' as const } },
+      { key: 'doc_eval_exp', validity: { mode: 'duration_from_issued' as const, durationDays: 365 } },
+      { key: 'doc_discr', validity: { mode: 'duration_from_issued' as const, durationDays: 30 } },
+      { key: 'doc_no_val', validity: null },
+      { key: 'doc_iso', validity: { mode: 'duration_from_issued' as const, durationDays: 10 } },
+    ];
+
+    for (const docType of vienciaDocTypes) {
+      await addRequirement({
+        organizationId: orgId,
+        configurationVersionId: draft.versionId,
+        counterpartyTypeId: typeProveedorId,
+        standard: 'SARLAFT',
+        type: 'document_type',
+        key: docType.key,
+        mandatory: 'always',
+        blocking: true,
+        ...(docType.validity ? { validity: docType.validity } : {}),
+      });
+    }
+
     await publishDraftConfiguration({
       organizationId: orgId,
       versionId: draft.versionId,
@@ -969,11 +994,11 @@ describe('HU-013: Carga de los documentos exigidos', () => {
         INSERT INTO public.assertions (
           id, organization_id, dossier_id, party_id, configuration_version_id,
           field, value, origin, produced_by, produced_at, evidence_id, confidence,
-          ai_execution_id, ai_model_metadata, is_pending_validation, created_at
+          ai_execution_id, ai_model_metadata, status, created_at
         ) VALUES (
           gen_random_uuid(), ${orgId}, ${testDossierId}, ${dossierData.party_id}, ${dossierData.configuration_version_id},
           ${'document:doc_discr:issued_at'}, ${'2025-01-01'}, 'extracted', NULL, now(), ${confirmRes.id}, NULL,
-          NULL, NULL, true, now()
+          NULL, NULL, 'pending_validation', now()
         )
       `;
 
