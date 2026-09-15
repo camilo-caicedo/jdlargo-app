@@ -947,5 +947,139 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
       // RLS debe impedir que el contexto de Beta vea el documento de Alfa
       expect(resultFromBetaContext.processed).toBe(0);
     });
+
+    it('Escenario: un documento exitoso puede reintentarse sin cambiar su estado', async () => {
+      const retryableDossier = await createDossierRequest({
+        organizationId: orgAlfa.id,
+        requestedBy: adminAlfaId,
+        counterpartyTypeName: 'proveedor_custom',
+        party: { identificationType: 'NIT', identificationNumber: '900111000-6', declaredName: 'Retry Test Co' },
+        internalOwnerId: adminAlfaId,
+      });
+
+      // Transición de estado para poder confirmar documentos
+      await executeTransition({
+        organizationId: orgAlfa.id,
+        dossierId: retryableDossier.id,
+        toState: 'enviada',
+        actorType: 'user',
+        actorId: adminAlfaId,
+      });
+      await executeTransition({
+        organizationId: orgAlfa.id,
+        dossierId: retryableDossier.id,
+        toState: 'en_diligenciamiento',
+        actorType: 'user',
+        actorId: adminAlfaId,
+      });
+
+      // Crear y subir documento a storage
+      const adminStorage = createSupabaseAdminClient();
+      const pdfContent = Buffer.from('%PDF-1.4 Mock RUT Content for Retry Test');
+      const storagePath = `${retryableDossier.id}/doc_rut/rut-retry.pdf`;
+      createdStoragePaths.push(storagePath);
+
+      await adminStorage.storage
+        .from(DOSSIER_DOCUMENTS_BUCKET)
+        .upload(storagePath, pdfContent, { contentType: 'application/pdf', upsert: true });
+
+      // Confirmar documento en base de datos
+      const docConfirm = await confirmDocumentUpload({
+        organizationId: orgAlfa.id,
+        dossierId: retryableDossier.id,
+        documentType: 'doc_rut',
+        storagePath,
+        hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        format: 'pdf',
+        size: pdfContent.length,
+        uploadedByType: 'user',
+        uploadedByUserId: adminAlfaId,
+      });
+      const documentId = docConfirm.id;
+
+      // Primera extracción: exitosa
+      const firstEngine = new MockExtractionEngine({
+        status: 'succeeded',
+        provider: 'google',
+        model: 'gemini-3.5-flash-lite',
+        modelVersion: '2026.03',
+        instructionTemplateId: 'extract_rut_v1',
+        instructionTemplateVersion: '1.0.0',
+        dataDestination: 'US-East',
+        fields: [
+          { field: 'nit', value: '900111111-1', confidence: 0.95 },
+        ],
+      });
+
+      const firstRun = await runDocumentExtraction({
+        organizationId: orgAlfa.id,
+        dossierId: retryableDossier.id,
+        documentId,
+        engine: firstEngine,
+      });
+
+      expect(firstRun.status).toBe('succeeded');
+      expect(firstRun.assertionsCreated).toBe(1);
+
+      // Verificar que el estado sigue siendo 'received'
+      const docAfterFirst = await adminSql`
+        SELECT state FROM public.documents WHERE id = ${documentId}::uuid
+      `;
+      expect(docAfterFirst[0].state).toBe('received');
+
+      // Segunda extracción sobre el mismo documento (reintento)
+      const secondEngine = new MockExtractionEngine({
+        status: 'succeeded',
+        provider: 'google',
+        model: 'gemini-3.5-flash-lite',
+        modelVersion: '2026.03',
+        instructionTemplateId: 'extract_rut_v1',
+        instructionTemplateVersion: '1.0.0',
+        dataDestination: 'US-East',
+        fields: [
+          { field: 'nit', value: '900111111-2', confidence: 0.92 }, // Valor diferente
+        ],
+      });
+
+      const secondRun = await runDocumentExtraction({
+        organizationId: orgAlfa.id,
+        dossierId: retryableDossier.id,
+        documentId,
+        engine: secondEngine,
+      });
+
+      expect(secondRun.status).toBe('succeeded');
+      expect(secondRun.assertionsCreated).toBe(1);
+
+      // Los dos intentos tienen ejecutionIds distintos
+      expect(firstRun.aiExecutionId).not.toBe(secondRun.aiExecutionId);
+
+      // Verificar que hay 2 filas en ai_executions para el mismo documento
+      const execs = await adminSql`
+        SELECT id, status FROM public.ai_executions
+        WHERE document_id = ${documentId}::uuid
+        ORDER BY created_at ASC
+      `;
+      expect(execs.length).toBe(2);
+      expect(execs[0].status).toBe('succeeded');
+      expect(execs[1].status).toBe('succeeded');
+
+      // Verificar que hay afirmaciones separadas por cada ejecución
+      const assertionsFromFirst = await adminSql`
+        SELECT count(*)::int as c FROM public.assertions WHERE ai_execution_id = ${firstRun.aiExecutionId}::uuid
+      `;
+      expect(assertionsFromFirst[0].c).toBe(1);
+
+      const assertionsFromSecond = await adminSql`
+        SELECT count(*)::int as c FROM public.assertions WHERE ai_execution_id = ${secondRun.aiExecutionId}::uuid
+      `;
+      expect(assertionsFromSecond[0].c).toBe(1);
+
+      // El documento sigue en estado 'received' después de la segunda extracción
+      const docAfterSecond = await adminSql`
+        SELECT state FROM public.documents WHERE id = ${documentId}::uuid
+      `;
+      expect(docAfterSecond[0].state).toBe('received');
+    });
   });
 });

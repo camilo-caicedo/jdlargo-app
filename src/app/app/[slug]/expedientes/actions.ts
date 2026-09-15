@@ -18,7 +18,7 @@ import {
 } from '@/server/dossiers/review';
 import { recordDecision, type EvidenceRef } from '@/server/dossiers/decision';
 import { executeTransition } from '@/server/dossiers/state-machine';
-import { runExtractionForPendingDocuments } from '@/server/extraction/service';
+import { runExtractionForPendingDocuments, runDocumentExtraction } from '@/server/extraction/service';
 
 const createDossierSchema = z.object({
   counterpartyTypeName: z.string().min(1, 'Seleccione un tipo de contraparte'),
@@ -494,6 +494,42 @@ export async function runExtractionForPendingDocumentsAction(
     console.error('[runExtractionForPendingDocumentsAction] Error:', err);
     return {
       error: err instanceof Error ? err.message : 'Error al ejecutar extracción de documentos',
+    };
+  }
+}
+
+export async function retryDocumentExtractionAction(
+  organizationId: string,
+  dossierId: string,
+  documentId: string,
+  slug: string,
+): Promise<{ success?: boolean; summary?: string; error?: string }> {
+  const userId = await requireAuthenticatedUserId();
+
+  const perm = await checkUserPermission(userId, organizationId, 'document:review');
+  if (!perm.granted) {
+    return {
+      error: perm.reason || 'No tiene permiso para revisar documentos y ejecutar extracción.',
+    };
+  }
+
+  try {
+    const result = await runDocumentExtraction({
+      organizationId,
+      dossierId,
+      documentId,
+    });
+
+    const summary = result.status === 'succeeded'
+      ? `Nueva lectura completada: ${result.assertionsCreated} dato(s) extraído(s)`
+      : 'La nueva lectura no pudo completarse, el documento quedó en revisión manual';
+
+    revalidatePath(`/app/${slug}/expedientes/${dossierId}`);
+    return { success: true, summary };
+  } catch (err: unknown) {
+    console.error('[retryDocumentExtractionAction] Error:', err);
+    return {
+      error: err instanceof Error ? err.message : 'Error al reintentar extracción del documento',
     };
   }
 }
