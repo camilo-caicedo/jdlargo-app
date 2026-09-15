@@ -3,6 +3,16 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
+import { AlertMessageDialog } from '@/components/alert-message-dialog';
 import { CheckCheck, RotateCcw, Loader2, AlertCircle, X } from 'lucide-react';
 import { requestCorrectionsAction, completeReviewAction } from '../actions';
 
@@ -27,6 +37,8 @@ export function ReviewActionsBox({
   const [overrideReason, setOverrideReason] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [alertMessage, setAlertMessage] = React.useState<string | null>(null);
+  const [isCompleteConfirmOpen, setIsCompleteConfirmOpen] = React.useState(false);
 
   if (!canReview) {
     return null;
@@ -34,7 +46,7 @@ export function ReviewActionsBox({
 
   const handleRequestCorrections = async () => {
     if (!correctionsReason.trim()) {
-      alert('Debe indicar un motivo para solicitar correcciones');
+      setAlertMessage('Debe indicar un motivo para solicitar correcciones');
       return;
     }
 
@@ -60,10 +72,6 @@ export function ReviewActionsBox({
   };
 
   const handleCompleteReview = async () => {
-    if (!confirm('¿Confirma que todos los requisitos y documentos han sido revisados y validados?')) {
-      return;
-    }
-
     setIsLoading(true);
     setErrorMessage(null);
     try {
@@ -80,7 +88,7 @@ export function ReviewActionsBox({
 
   const handleCompleteReviewWithOverride = async () => {
     if (!overrideReason.trim()) {
-      alert('Debe ingresar un motivo para la excepción');
+      setAlertMessage('Debe ingresar un motivo para la excepción');
       return;
     }
 
@@ -130,7 +138,7 @@ export function ReviewActionsBox({
 
         <Button
           size="sm"
-          onClick={handleCompleteReview}
+          onClick={() => setIsCompleteConfirmOpen(true)}
           disabled={isLoading}
           className="text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
         >
@@ -283,6 +291,34 @@ export function ReviewActionsBox({
           </div>
         </div>
       )}
+
+      <AlertDialog open={isCompleteConfirmOpen} onOpenChange={setIsCompleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Dar por revisado</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Confirma que todos los requisitos y documentos han sido revisados y validados?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex items-center justify-end gap-2">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setIsCompleteConfirmOpen(false);
+                handleCompleteReview();
+              }}
+            >
+              Confirmar
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertMessageDialog
+        open={alertMessage !== null}
+        onOpenChange={(open) => !open && setAlertMessage(null)}
+        message={alertMessage ?? ''}
+      />
     </div>
   );
 }

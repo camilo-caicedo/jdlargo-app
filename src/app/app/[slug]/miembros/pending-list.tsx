@@ -3,6 +3,15 @@
 import { useState } from 'react';
 import { revokeInvitationAction, inviteMemberAction } from './actions';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
 import { Loader2, Trash2, RefreshCw } from 'lucide-react';
 import { type InvitationDetail } from '@/server/organizations/invitations';
 
@@ -14,6 +23,7 @@ interface PendingListProps {
 export function PendingInvitationsList({ organizationId, invitations }: PendingListProps) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
 
   if (invitations.length === 0) {
     return (
@@ -24,9 +34,6 @@ export function PendingInvitationsList({ organizationId, invitations }: PendingL
   }
 
   const handleRevoke = async (invitationId: string) => {
-    if (!confirm('¿Está seguro de que desea revocar esta invitación? El enlace dejará de funcionar.')) {
-      return;
-    }
     setLoadingId(invitationId);
     setActionError(null);
     try {
@@ -114,7 +121,7 @@ export function PendingInvitationsList({ organizationId, invitations }: PendingL
                   variant="ghost"
                   size="sm"
                   disabled={isBusy}
-                  onClick={() => handleRevoke(inv.id)}
+                  onClick={() => setPendingRevokeId(inv.id)}
                   className="text-xs h-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
                   title="Revocar invitación"
                 >
@@ -132,6 +139,30 @@ export function PendingInvitationsList({ organizationId, invitations }: PendingL
           );
         })}
       </div>
+
+      <AlertDialog open={pendingRevokeId !== null} onOpenChange={(open) => !open && setPendingRevokeId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revocar invitación</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Está seguro de que desea revocar esta invitación? El enlace dejará de funcionar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex items-center justify-end gap-2">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                const id = pendingRevokeId;
+                setPendingRevokeId(null);
+                if (id) handleRevoke(id);
+              }}
+            >
+              Revocar
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

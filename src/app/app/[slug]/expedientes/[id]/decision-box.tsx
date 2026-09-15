@@ -4,6 +4,15 @@ import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
+import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
@@ -68,6 +77,7 @@ export function DecisionBox({
 
   // Close dossier state
   const [isClosing, setIsClosing] = React.useState(false);
+  const [isCloseConfirmOpen, setIsCloseConfirmOpen] = React.useState(false);
 
   const isPendingDecision = dossierState === 'pendiente_de_decision';
   const isDecided = ['aprobada', 'aprobada_con_condiciones', 'rechazada'].includes(dossierState);
@@ -152,10 +162,6 @@ export function DecisionBox({
   };
 
   const handleCloseDossier = async () => {
-    if (!confirm('¿Confirma que desea cerrar formalmente el expediente? Una vez cerrado, no admitirá más transiciones de estado.')) {
-      return;
-    }
-
     setIsClosing(true);
     setErrorMessage(null);
     try {
@@ -189,7 +195,7 @@ export function DecisionBox({
           <Button
             size="sm"
             variant="outline"
-            onClick={handleCloseDossier}
+            onClick={() => setIsCloseConfirmOpen(true)}
             disabled={isClosing}
             className="text-xs gap-1.5 text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
@@ -474,6 +480,27 @@ export function DecisionBox({
         </div>
       )}
 
+      <AlertDialog open={isCloseConfirmOpen} onOpenChange={setIsCloseConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cerrar expediente</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Confirma que desea cerrar formalmente el expediente? Una vez cerrado, no admitirá más transiciones de estado.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex items-center justify-end gap-2">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setIsCloseConfirmOpen(false);
+                handleCloseDossier();
+              }}
+            >
+              Cerrar expediente
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

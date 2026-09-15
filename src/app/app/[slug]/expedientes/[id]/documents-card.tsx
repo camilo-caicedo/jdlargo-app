@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AlertMessageDialog } from '@/components/alert-message-dialog';
 import {
   FileText,
   Download,
@@ -54,6 +55,7 @@ export function DocumentsCard({
   const [rejectingDocId, setRejectingDocId] = React.useState<string | null>(null);
   const [rejectReason, setRejectReason] = React.useState<string>('');
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [alertMessage, setAlertMessage] = React.useState<string | null>(null);
 
   const isReviewable = dossierState === 'en_revision' && canReviewDocuments;
 
@@ -67,10 +69,10 @@ export function DocumentsCard({
         }
         window.open(res.url, '_blank', 'noopener,noreferrer');
       } else {
-        alert(res.error || 'Error al obtener enlace de descarga');
+        setAlertMessage(res.error || 'Error al obtener enlace de descarga');
       }
     } catch {
-      alert('Error de conexión al descargar el documento');
+      setAlertMessage('Error de conexión al descargar el documento');
     } finally {
       setDownloadingId(null);
     }
@@ -93,7 +95,7 @@ export function DocumentsCard({
 
   const handleReject = async (docId: string) => {
     if (!rejectReason.trim()) {
-      alert('Debe indicar un motivo explícito para el rechazo');
+      setAlertMessage('Debe indicar un motivo explícito para el rechazo');
       return;
     }
 
@@ -320,6 +322,12 @@ export function DocumentsCard({
           </ul>
         )}
       </CardContent>
+
+      <AlertMessageDialog
+        open={alertMessage !== null}
+        onOpenChange={(open) => !open && setAlertMessage(null)}
+        message={alertMessage ?? ''}
+      />
     </Card>
   );
 }

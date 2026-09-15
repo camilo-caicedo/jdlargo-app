@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AlertMessageDialog } from '@/components/alert-message-dialog';
 import type { RequirementDetail } from '@/lib/requirement-evaluation';
 import {
   MAX_UPLOAD_SIZE_BYTES,
@@ -80,6 +81,7 @@ export function DocumentUploadSection({
   >({});
 
   const [downloadingDocId, setDownloadingDocId] = React.useState<string | null>(null);
+  const [alertMessage, setAlertMessage] = React.useState<string | null>(null);
 
   if (documentRequirements.length === 0) {
     return null;
@@ -250,10 +252,10 @@ export function DocumentUploadSection({
       if (res.success && res.url) {
         window.open(res.url, '_blank', 'noopener,noreferrer');
       } else {
-        alert(res.error || 'Error al generar enlace de descarga');
+        setAlertMessage(res.error || 'Error al generar enlace de descarga');
       }
     } catch {
-      alert('Error de conexión al solicitar el archivo');
+      setAlertMessage('Error de conexión al solicitar el archivo');
     } finally {
       setDownloadingDocId(null);
     }
@@ -498,6 +500,12 @@ export function DocumentUploadSection({
           );
         })}
       </CardContent>
+
+      <AlertMessageDialog
+        open={alertMessage !== null}
+        onOpenChange={(open) => !open && setAlertMessage(null)}
+        message={alertMessage ?? ''}
+      />
     </Card>
   );
 }
