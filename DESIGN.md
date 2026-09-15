@@ -41,6 +41,10 @@ both required from the start (shadcn/ui + `next-themes` default pattern).
 not heavy drop shadows. Border radius 6–8px, not "everything is a pill." Icons:
 `lucide-react`, thin stroke, no filled cartoon icons.
 
+### Contenedores de página (web-first)
+
+Páginas internas con contenido principal (`/app/[slug]/expedientes`, `/app/[slug]/miembros`, etc.) usan `max-w-full mx-auto` en el contenedor raíz para aprovechar el ancho disponible en desktop (≥1440px) sin restricción de ancho máximo. Los componentes internos (formularios, grillas, tarjetas) tienen sus propias restricciones locales según su necesidad (16-24 columnas, grids responsivos). Esta convención favorece la orientación web-first: el layout se expande a desktop, luego contrae para móvil (~390px) mediante media queries y grid responsivos, no mediante shrink de contenedor exterior.
+
 ## Explicitly avoid — the generic-AI tells
 
 Purple-to-pink gradient blobs, glassmorphism, generic robot/shield/lock stock icons,

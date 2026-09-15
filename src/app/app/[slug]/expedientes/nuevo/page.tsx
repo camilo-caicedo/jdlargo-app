@@ -148,7 +148,7 @@ export default async function NewDossierPage({
   }));
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-full mx-auto space-y-6">
       <div className="flex items-center gap-2 text-xs text-zinc-500">
         <Link href={`/app/${slug}/expedientes`} className="hover:underline">
           Expedientes

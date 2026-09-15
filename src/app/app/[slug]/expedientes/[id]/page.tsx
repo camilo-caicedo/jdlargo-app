@@ -217,7 +217,7 @@ export default async function DossierDetailPage({
   }).length;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-full mx-auto space-y-6">
       {/* Back button & Breadcrumb */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs text-zinc-500">

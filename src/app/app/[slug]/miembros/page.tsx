@@ -68,7 +68,7 @@ export default async function MiembrosPage({
   const pendingInvitations = await listPendingInvitations(userId, organizationId);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-full mx-auto space-y-6">
       <div className="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-800">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 flex items-center gap-2">

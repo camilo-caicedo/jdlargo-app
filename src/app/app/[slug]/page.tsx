@@ -49,7 +49,7 @@ export default async function AppOrganizationPage({
   const decided = dossiers.filter((d) => ['aprobado', 'rechazado', 'cerrada'].includes(d.state)).length;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 mt-2">
+    <div className="max-w-full mx-auto space-y-6 mt-2">
       {/* Header section */}
       <div className="pb-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
