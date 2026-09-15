@@ -1102,13 +1102,13 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
         counterpartyTypeId: cpTypeHU021.id,
         standard: 'SARLAFT',
         type: 'document_type',
-        key: 'doc_vigencia_test',
+        key: 'doc_rut',
         mandatory: 'always',
         blocking: true,
         validity: { mode: 'duration_from_issued', durationDays: 365 },
       });
 
-      const pubVersionHU021 = await publishDraftConfiguration({
+      await publishDraftConfiguration({
         organizationId: orgAlfa.id,
         versionId: draftHU021.versionId,
         publishedBy: adminAlfaId,
@@ -1146,7 +1146,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
       // Subir documento
       const adminStorage = createSupabaseAdminClient();
       const testPdfContent = Buffer.from('%PDF-1.4 Test for validity extraction');
-      const testPath = `${dossierHU021.id}/doc_vigencia_test/hu021-test.pdf`;
+      const testPath = `${dossierHU021.id}/doc_rut/hu021-test.pdf`;
       await adminStorage.storage
         .from(DOSSIER_DOCUMENTS_BUCKET)
         .upload(testPath, testPdfContent, { contentType: 'application/pdf', upsert: true });
@@ -1157,7 +1157,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
       const { id: docId } = await confirmDocumentUpload({
         organizationId: orgAlfa.id,
         dossierId: dossierHU021.id,
-        documentType: 'doc_vigencia_test',
+        documentType: 'doc_rut',
         storagePath: testPath,
         hash: validated.hash,
         format: validated.format,
@@ -1176,7 +1176,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
         dataDestination: 'mock-datacenter',
         fields: [
           { field: 'nit', value: '900123456-1', confidence: 0.95 },
-          { field: 'document:doc_vigencia_test:issued_at', value: '2025-06-15', confidence: 0.90 },
+          { field: 'document:doc_rut:issued_at', value: '2025-06-15', confidence: 0.90 },
         ],
       });
 
@@ -1186,12 +1186,13 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
         documentId: docId,
         engine: mockEngine,
       });
+      expect(result.status).toBe('succeeded');
 
       // Verificar que el motor recibió el campo de fecha en expectedFields
       expect(mockEngine.lastInput).toBeDefined();
       expect(mockEngine.lastInput?.expectedFields).toBeDefined();
       const issuedAtField = mockEngine.lastInput?.expectedFields?.find(
-        (f) => f.key === 'document:doc_vigencia_test:issued_at',
+        (f) => f.key === 'document:doc_rut:issued_at',
       );
       expect(issuedAtField).toBeDefined();
       expect(issuedAtField?.label).toContain('expedición');
@@ -1200,7 +1201,7 @@ describe('HU-017: Extracción de datos desde los documentos', () => {
       const assertions = await adminSql`
         SELECT * FROM public.assertions
         WHERE organization_id = ${orgAlfa.id}
-          AND field = 'document:doc_vigencia_test:issued_at'
+          AND field = 'document:doc_rut:issued_at'
           AND origin = 'extracted'
       `;
       expect(assertions.length).toBeGreaterThan(0);

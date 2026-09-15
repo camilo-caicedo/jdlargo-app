@@ -243,6 +243,7 @@ export async function createDraftConfiguration(
           blocking: r.blocking,
           condition: r.condition,
           validation: r.validation,
+          validity: r.validity,
         }));
         await client.insert(requirements).values(reqValues);
       }

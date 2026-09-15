@@ -53,8 +53,7 @@ import {
   rejectDocument,
   evaluateDocumentExpirations,
 } from './document';
-import { computeEffectiveExpiry, type DocumentValidityConfig } from '@/lib/document-validity';
-import { getOpenDiscrepancies } from '../reconciliation/service';
+import { type DocumentValidityConfig } from '@/lib/document-validity';
 
 const directUrl = process.env.DIRECT_URL;
 const adminSql = postgres(directUrl || '');
@@ -757,23 +756,46 @@ describe('HU-013: Carga de los documentos exigidos', () => {
   });
 
   describe('HU-021: Vigencias y estados del documento', () => {
-    const createTestDossierWithConfig = async (docTypeName: string, validity?: DocumentValidityConfig['validity']) => {
+    const createTestDossierWithConfig = async (docTypeName: string, validity?: DocumentValidityConfig) => {
       const newDraft = await createDraftConfiguration({ organizationId: orgId, standard: 'SARLAFT' });
       const [type] = await adminSql`
         SELECT id FROM public.counterparty_types
-        WHERE organization_id = ${orgId} AND configuration_version_id = ${newDraft.versionId} LIMIT 1
+        WHERE organization_id = ${orgId} AND configuration_version_id = ${newDraft.versionId} AND name = 'proveedor_custom'
+        LIMIT 1
       `;
-      await addRequirement({
-        organizationId: orgId,
-        configurationVersionId: newDraft.versionId,
-        counterpartyTypeId: type.id,
-        standard: 'SARLAFT',
-        type: 'document_type',
-        key: docTypeName,
-        mandatory: 'always',
-        blocking: true,
-        ...(validity ? { validity } : {}),
-      });
+
+      // El clon del borrador ya trae doc_rut_expire_test/doc_rut_no_exp/etc. (sembrados en el
+      // beforeAll de este describe) con su vigencia — actualizar en vez de insertar de nuevo
+      // evita violar el unique index (org, version, counterparty_type, standard, type, key).
+      const [existing] = await adminSql`
+        SELECT id FROM public.requirements
+        WHERE configuration_version_id = ${newDraft.versionId}
+          AND counterparty_type_id = ${type.id}
+          AND type = 'document_type'
+          AND key = ${docTypeName}
+      `;
+
+      if (existing) {
+        if (validity !== undefined) {
+          await adminSql`
+            UPDATE public.requirements SET validity = ${JSON.stringify(validity)}::jsonb
+            WHERE id = ${existing.id}
+          `;
+        }
+      } else {
+        await addRequirement({
+          organizationId: orgId,
+          configurationVersionId: newDraft.versionId,
+          counterpartyTypeId: type.id,
+          standard: 'SARLAFT',
+          type: 'document_type',
+          key: docTypeName,
+          mandatory: 'always',
+          blocking: true,
+          ...(validity ? { validity } : {}),
+        });
+      }
+
       await publishDraftConfiguration({
         organizationId: orgId,
         versionId: newDraft.versionId,
@@ -819,18 +841,6 @@ describe('HU-013: Carga de los documentos exigidos', () => {
         durationDays: 30,
       });
 
-      // Debug: verify dossier config and requirements
-      const [dossierDebug] = await adminSql`
-        SELECT configuration_version_id FROM public.dossiers WHERE id = ${testDossierId}
-      `;
-      const docsReq = await adminSql`
-        SELECT key FROM public.requirements
-        WHERE configuration_version_id = ${dossierDebug.configuration_version_id}
-        AND type = 'document_type'
-      `;
-      console.log('Dossier config:', dossierDebug?.configuration_version_id);
-      console.log('Doc requirements:', docsReq.map(r => r.key));
-
       const testPdfContent = Buffer.from('%PDF-1.4 Fake PDF for expiry test');
       const testPath = `${testDossierId}/doc_rut_expire_test/expired-1.pdf`;
       createdStoragePaths.push(testPath);
@@ -843,7 +853,7 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
       // Subir documento con fecha de expedición hace 40 días (vencido)
       const fortyDaysAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const confirmRes = await confirmDocumentUpload({
+      await confirmDocumentUpload({
         organizationId: orgId,
         dossierId: testDossierId,
         documentType: 'doc_rut_expire_test',
@@ -924,9 +934,10 @@ describe('HU-013: Carga de los documentos exigidos', () => {
 
       const validated = await readAndValidateUploadedFile(testPath);
 
-      // Subir documento con fecha de hace 400 días (vencido)
-      const fourHundredDaysAgo = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const confirmRes = await confirmDocumentUpload({
+      // Subir el documento SIN fecha declarada — todavía no se conoce su vigencia al momento
+      // de subir (por eso no se rechaza), simulando que la fecha de expedición llega después
+      // vía extracción de IA, como en el flujo real.
+      await confirmDocumentUpload({
         organizationId: orgId,
         dossierId: testDossierId,
         documentType: 'doc_eval_exp',
@@ -934,9 +945,23 @@ describe('HU-013: Carga de los documentos exigidos', () => {
         hash: validated.hash,
         format: validated.format,
         size: validated.size,
-        issuedAt: fourHundredDaysAgo,
         uploadedByType: 'counterparty',
       });
+
+      // Simular que la extracción de IA registró, después de la subida, una fecha de
+      // expedición de hace 400 días — vencida contra la vigencia de 365 días configurada.
+      const [dossierRow] = await adminSql`
+        SELECT party_id, configuration_version_id FROM public.dossiers WHERE id = ${testDossierId}
+      `;
+      const fourHundredDaysAgo = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      await adminSql`
+        INSERT INTO public.assertions
+          (organization_id, dossier_id, party_id, configuration_version_id, field, value, origin)
+        VALUES (
+          ${orgId}, ${testDossierId}, ${dossierRow.party_id}, ${dossierRow.configuration_version_id},
+          'document:doc_eval_exp:issued_at', ${JSON.stringify(fourHundredDaysAgo)}::jsonb, 'extracted'
+        )
+      `;
 
       // Evaluar vigencias
       const result = await evaluateDocumentExpirations(orgId, testDossierId);
@@ -950,7 +975,7 @@ describe('HU-013: Carga de los documentos exigidos', () => {
       // Verificar que hay un audit log
       const auditLog = await adminSql`
         SELECT * FROM public.audit_log
-        WHERE organization_id = ${orgId} AND action = 'document.expired' AND entity_id = ${evalDoc?.id}
+        WHERE organization_id = ${orgId} AND action = 'document.expired' AND entity_id = ${evalDoc!.id}
       `;
       expect(auditLog.length).toBeGreaterThan(0);
     });
