@@ -71,6 +71,7 @@ export const configurationVersions = pgTable('configuration_versions', {
   publishedBy: uuid('published_by').references(() => users.id),
   publishedAt: timestamp('published_at', { withTimezone: true }),
   reason: text('reason'),
+  signatureLevelRequired: integer('signature_level_required').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex('config_versions_org_num_unique').on(t.organizationId, t.versionNumber),
@@ -262,7 +263,7 @@ export const dossierAccessUses = pgTable('dossier_access_uses', {
   denialReason: text('denial_reason'),
 }).enableRLS();
 
-// dossier_access_otp_codes — códigos de un solo uso (HU-010)
+// dossier_access_otp_codes — códigos de un solo uso (HU-010, reutilizado en HU-022)
 export const dossierAccessOtpCodes = pgTable('dossier_access_otp_codes', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').notNull().references(() => organizations.id),
@@ -272,6 +273,7 @@ export const dossierAccessOtpCodes = pgTable('dossier_access_otp_codes', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   attempts: integer('attempts').notNull().default(0),
   consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  purpose: text('purpose', { enum: ['access', 'signature'] }).notNull().default('access'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }).enableRLS();
 
@@ -401,6 +403,26 @@ export const aiExecutions = pgTable('ai_executions', {
 }, (t) => [
   index('ai_executions_dossier_idx').on(t.dossierId),
   index('ai_executions_org_dossier_idx').on(t.organizationId, t.dossierId),
+]).enableRLS();
+
+// signatures — firmas electrónicas de expedientes, niveles 1 y 2 (HU-022)
+export const signatures = pgTable('signatures', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  dossierId: uuid('dossier_id').notNull().references(() => dossiers.id),
+  partyId: uuid('party_id').notNull().references(() => parties.id),
+  level: integer('level').notNull(),
+  contentHash: text('content_hash').notNull(),
+  contentVersion: text('content_version').notNull(),
+  ipAddress: text('ip_address').notNull(),
+  additionalFactor: jsonb('additional_factor'),
+  signedAt: timestamp('signed_at', { withTimezone: true }).defaultNow().notNull(),
+  status: text('status', { enum: ['active', 'invalid'] }).notNull().default('active'),
+  invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+  invalidatedReason: text('invalidated_reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('signatures_org_dossier_idx').on(t.organizationId, t.dossierId),
 ]).enableRLS();
 
 

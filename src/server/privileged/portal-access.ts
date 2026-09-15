@@ -1,5 +1,5 @@
 import { createHash, randomInt } from 'crypto';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { executePrivilegedSystemOperation, adminDb } from './system-execution';
 import { DrizzleClient } from '../db/client';
 import {
@@ -174,7 +174,10 @@ export async function verifyTokenGrantsAccess(
  * Stores the SHA-256 hash of the code in dossier_access_otp_codes.
  * Uses recipientEmail from dossierAccessTokens.
  */
-export async function requestOtpCode(accessTokenId: string): Promise<void> {
+export async function requestOtpCode(
+  accessTokenId: string,
+  purpose: 'access' | 'signature' = 'access',
+): Promise<void> {
   const [tokenRecord] = await adminDb
     .select({
       id: dossierAccessTokens.id,
@@ -216,6 +219,7 @@ export async function requestOtpCode(accessTokenId: string): Promise<void> {
         codeHash,
         expiresAt,
         attempts: 0,
+        purpose,
       });
 
       return {
@@ -242,6 +246,7 @@ export async function requestOtpCode(accessTokenId: string): Promise<void> {
 export async function verifyOtpCode(
   accessTokenId: string,
   code: string,
+  purpose: 'access' | 'signature' = 'access',
 ): Promise<{ verified: boolean; reason?: string }> {
   const codeHash = createHash('sha256').update(code.trim()).digest('hex');
 
@@ -271,12 +276,17 @@ export async function verifyOtpCode(
       description: 'Verification of OTP code for portal access',
     },
     async (tx) => {
-      // Look up most recent unconsumed OTP code for this access token
+      // Look up most recent unconsumed OTP code for this access token with matching purpose
       const [otpRecord] = await tx
         .select()
         .from(dossierAccessOtpCodes)
-        .where(eq(dossierAccessOtpCodes.accessTokenId, accessTokenId))
-        .orderBy(dossierAccessOtpCodes.createdAt)
+        .where(
+          and(
+            eq(dossierAccessOtpCodes.accessTokenId, accessTokenId),
+            eq(dossierAccessOtpCodes.purpose, purpose),
+          ),
+        )
+        .orderBy(desc(dossierAccessOtpCodes.createdAt))
         .limit(1);
 
       if (!otpRecord) {

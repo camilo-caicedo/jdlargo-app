@@ -50,6 +50,7 @@ interface DeclarationFormProps {
   values: Record<string, unknown>;
   suggestions?: Record<string, FieldSuggestion>;
   correctionsReason?: string | null;
+  showCompleteButton?: boolean;
 }
 
 function isEmptyValue(v: unknown): boolean {
@@ -64,6 +65,7 @@ export function DeclarationForm({
   values: initialValues,
   suggestions = {},
   correctionsReason,
+  showCompleteButton = true,
 }: DeclarationFormProps) {
   const [formValues, setFormValues] = React.useState<Record<string, unknown>>(() => {
     const initial = { ...initialValues };
@@ -551,20 +553,22 @@ export function DeclarationForm({
             Guardar avance
           </Button>
 
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleComplete}
-            disabled={isSaving || isCompleting}
-            className="flex-1 sm:flex-none text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
-          >
-            {isCompleting ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Send className="w-3.5 h-3.5" />
-            )}
-            Finalizar diligenciamiento
-          </Button>
+          {showCompleteButton && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleComplete}
+              disabled={isSaving || isCompleting}
+              className="flex-1 sm:flex-none text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {isCompleting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Send className="w-3.5 h-3.5" />
+              )}
+              Finalizar diligenciamiento
+            </Button>
+          )}
         </div>
       </CardFooter>
     </Card>

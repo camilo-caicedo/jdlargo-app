@@ -15,6 +15,7 @@ import { getOpenDiscrepancies } from '../reconciliation/service';
 import { enforceUserPermission } from '../auth/access-control';
 import { scanBuffer } from '@/lib/antivirus';
 import { computeEffectiveExpiry } from '@/lib/document-validity';
+import { invalidateActiveSignatureIfContentChanged } from '../signature/service';
 
 export interface RequestDocumentUploadInput {
   organizationId: string;
@@ -448,6 +449,9 @@ export async function confirmDocumentUpload(
       },
       tx,
     );
+
+    // 8. Invalidate active signature if content changed (HU-022)
+    await invalidateActiveSignatureIfContentChanged(input.organizationId, input.dossierId, tx);
 
     return {
       id: createdDoc.id,

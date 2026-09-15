@@ -17,7 +17,7 @@ export async function verifyPortalOtp(
     return { success: false, error: 'Ingrese el código de 6 dígitos completo.' };
   }
 
-  const result = await verifyOtpCode(accessTokenId, code);
+  const result = await verifyOtpCode(accessTokenId, code, 'access');
 
   if (!result.verified) {
     return { success: false, error: result.reason || 'Código inválido.' };

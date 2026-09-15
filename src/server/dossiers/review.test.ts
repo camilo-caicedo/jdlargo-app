@@ -76,6 +76,14 @@ async function cleanupTestData() {
     DELETE FROM public.decisions
     WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
   `;
+  // Delete FKs to dossiers BEFORE deleting dossiers
+  await adminSql`
+    DELETE FROM public.signatures
+    WHERE dossier_id IN (
+      SELECT id FROM public.dossiers
+      WHERE organization_id IN (SELECT id FROM public.organizations WHERE name IN ${adminSql(TEST_ORG_NAMES)})
+    )
+  `;
   await adminSql`
     DELETE FROM public.dossier_transitions
     WHERE dossier_id IN (
@@ -259,6 +267,26 @@ describe('HU-014: Revisión del expediente y solicitud de correcciones', () => {
       toState: 'documentos_recibidos',
       actorType: 'counterparty',
     });
+
+    // Create active signature to allow ensureReviewEntryTransition to promote to en_revision (HU-022)
+    await adminSql`
+      INSERT INTO public.signatures (
+        id, organization_id, dossier_id, party_id, level, content_hash, content_version,
+        ip_address, signed_at, status, created_at
+      ) VALUES (
+        gen_random_uuid(),
+        ${orgId}::uuid,
+        ${dossierId}::uuid,
+        ${partyId}::uuid,
+        1,
+        'test-content-hash-' || gen_random_uuid()::text,
+        now()::text,
+        '127.0.0.1',
+        now(),
+        'active',
+        now()
+      )
+    `;
   }, 60000);
 
   afterAll(async () => {

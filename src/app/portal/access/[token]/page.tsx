@@ -13,8 +13,10 @@ import { OtpForm } from './otp-form';
 import { PrivacyNoticeForm } from './privacy-notice-form';
 import { DeclarationForm } from './declaration-form';
 import { DocumentUploadSection } from './document-upload-section';
+import { SignatureSection } from './signature-section';
 import { getDeclarationForm } from '@/server/dossiers/declaration';
 import { getLatestDocumentsForDossier, evaluateDocumentExpirations } from '@/server/documents/document';
+import { getDossierSignatureStatus } from '@/server/signature/service';
 import { CheckCircle, Clock } from 'lucide-react';
 
 export default async function PortalAccessPage({
@@ -94,7 +96,7 @@ export default async function PortalAccessPage({
 
     if (!isVerified) {
       // Trigger sending OTP code if needed
-      await requestOtpCode(result.accessTokenId).catch((err) => {
+      await requestOtpCode(result.accessTokenId, 'access').catch((err) => {
         console.warn('[PortalAccessPage] Error requesting OTP code:', err);
       });
 
@@ -200,6 +202,68 @@ export default async function PortalAccessPage({
         />
       );
     }
+  }
+
+  // 5. Signature Gate (HU-022) — after consent, before review
+  if (result.dossierState === 'documentos_recibidos') {
+    if (!result.organizationId || !result.dossierId || !result.accessTokenId) {
+      return (
+        <Alert variant="destructive">
+          <AlertTitle>Error de acceso</AlertTitle>
+          <AlertDescription>
+            No se pudo procesar su solicitud de firma.
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
+    const signatureStatus = await getDossierSignatureStatus(result.organizationId, result.dossierId);
+    if (!signatureStatus.activeSignature) {
+      const [formData, latestDocs] = await Promise.all([
+        getDeclarationForm(result.organizationId, result.dossierId),
+        getLatestDocumentsForDossier(result.organizationId, result.dossierId),
+      ]);
+
+      const initialDocsDTO = latestDocs.map((d) => ({
+        id: d.id,
+        documentType: d.documentType,
+        version: d.version,
+        format: d.format,
+        state: d.state,
+        rejectionReason: d.rejectionReason,
+        createdAt: d.createdAt.toISOString(),
+      }));
+
+      return (
+        <div className="w-full space-y-6">
+          <DocumentUploadSection
+            token={token}
+            dossierId={result.dossierId}
+            organizationId={result.organizationId}
+            documentRequirements={formData.documentRequirements}
+            initialDocuments={initialDocsDTO}
+          />
+          <DeclarationForm
+            token={token}
+            dossierId={result.dossierId}
+            organizationId={result.organizationId}
+            fieldRequirements={formData.fieldRequirements}
+            documentRequirements={formData.documentRequirements}
+            values={formData.values}
+            suggestions={formData.suggestions}
+            showCompleteButton={false}
+          />
+          <SignatureSection
+            token={token}
+            dossierId={result.dossierId}
+            organizationId={result.organizationId}
+            accessTokenId={result.accessTokenId}
+            levelRequired={signatureStatus.levelRequired}
+          />
+        </div>
+      );
+    }
+    // ya firmado: cae al bloque genérico de "información enviada" existente más abajo
   }
 
   if (result.dossierState === 'en_diligenciamiento') {

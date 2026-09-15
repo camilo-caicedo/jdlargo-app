@@ -9,6 +9,7 @@ import { isRequirementCurrentlyRequired } from '@/lib/requirement-evaluation';
 import { enforceUserPermission } from '../auth/access-control';
 import { logAuditEvent } from '../audit/service';
 import { getOpenDiscrepancies } from '../reconciliation/service';
+import { getDossierSignatureStatus } from '../signature/service';
 
 export class IncompleteReviewError extends Error {
   constructor(
@@ -34,6 +35,7 @@ export class IncompleteReviewError extends Error {
 /**
  * Ensures entry transition from 'documentos_recibidos' to 'en_revision' when opened by staff.
  * Idempotent: if dossier is in any other state, does nothing.
+ * Guard: only promotes if an active signature exists covering current content (HU-022).
  * (HU-014 §2.1, §2.5)
  */
 export async function ensureReviewEntryTransition(
@@ -59,6 +61,12 @@ export async function ensureReviewEntryTransition(
 
   if (!dossier || dossier.state !== 'documentos_recibidos') {
     return;
+  }
+
+  // Guard: only promote if active signature exists (HU-022)
+  const signatureStatus = await getDossierSignatureStatus(organizationId, dossierId, client);
+  if (!signatureStatus.activeSignature) {
+    return; // pending signature, don't promote yet
   }
 
   await executeTransition(

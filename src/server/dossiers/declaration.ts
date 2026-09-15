@@ -15,6 +15,7 @@ import {
 import { areValuesEqual } from '@/lib/value-comparison';
 import { executeTransition } from './state-machine';
 import { getLatestDocumentsForDossier } from '../documents/document';
+import { invalidateActiveSignatureIfContentChanged } from '../signature/service';
 
 export class IncompleteDeclarationError extends Error {
   constructor(
@@ -215,6 +216,9 @@ export async function saveDeclaredFields(
         );
       }
     }
+
+    // 6. Invalidate active signature if content changed (HU-022)
+    await invalidateActiveSignatureIfContentChanged(input.organizationId, input.dossierId, tx);
   };
 
   if (txClient && 'execute' in txClient) {

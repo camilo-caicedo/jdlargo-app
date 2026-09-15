@@ -21,12 +21,14 @@ export interface CreateDraftInput {
   standard?: string;
   referenceRegulation?: string;
   rolesConfig?: DraftRoleInput[];
+  signatureLevelRequired?: number;
 }
 
 export interface UpdateDraftInput {
   standard?: string;
   referenceRegulation?: string;
   rolesConfig?: DraftRoleInput[];
+  signatureLevelRequired?: number;
 }
 
 export interface PublishDraftInput {
@@ -104,7 +106,18 @@ export async function createDraftConfiguration(
 ): Promise<{ versionId: string; versionNumber: string }> {
   const client = txClient || db;
 
-  // Calculate next version number
+  // Validate signature level (only 1 and 2 are supported)
+  if (
+    input.signatureLevelRequired !== undefined
+    && input.signatureLevelRequired !== 1
+    && input.signatureLevelRequired !== 2
+  ) {
+    throw new Error(
+      'El nivel de firma 3 (certificada) requiere un proveedor externo no integrado en esta plataforma todavía',
+    );
+  }
+
+  // Calculate next version number and get last published for inheritance
   const existing = await client
     .select()
     .from(configurationVersions)
@@ -113,15 +126,19 @@ export async function createDraftConfiguration(
 
   const nextNumber = (existing.length + 1).toString();
 
+  // Find last published version to inherit defaults for unspecified fields
+  const lastPublished = existing.find((v) => v.status === 'published');
+
   const [draftVer] = await client
     .insert(configurationVersions)
     .values({
       organizationId: input.organizationId,
       versionNumber: nextNumber,
       status: 'draft',
-      standard: input.standard || 'SARLAFT',
-      referenceRegulation: input.referenceRegulation || null,
+      standard: input.standard || lastPublished?.standard || 'SARLAFT',
+      referenceRegulation: input.referenceRegulation !== undefined ? input.referenceRegulation : lastPublished?.referenceRegulation || null,
       effectiveFrom: new Date(),
+      signatureLevelRequired: input.signatureLevelRequired !== undefined ? input.signatureLevelRequired : (lastPublished?.signatureLevelRequired ?? 1),
     })
     .returning();
 
@@ -265,6 +282,17 @@ export async function updateDraftConfiguration(
 ): Promise<void> {
   const client = txClient || db;
 
+  // Validate signature level (only 1 and 2 are supported)
+  if (
+    input.signatureLevelRequired !== undefined
+    && input.signatureLevelRequired !== 1
+    && input.signatureLevelRequired !== 2
+  ) {
+    throw new Error(
+      'El nivel de firma 3 (certificada) requiere un proveedor externo no integrado en esta plataforma todavía',
+    );
+  }
+
   const [existing] = await client
     .select()
     .from(configurationVersions)
@@ -290,6 +318,8 @@ export async function updateDraftConfiguration(
       standard: input.standard !== undefined ? input.standard : existing.standard,
       referenceRegulation:
         input.referenceRegulation !== undefined ? input.referenceRegulation : existing.referenceRegulation,
+      signatureLevelRequired:
+        input.signatureLevelRequired !== undefined ? input.signatureLevelRequired : existing.signatureLevelRequired,
     })
     .where(eq(configurationVersions.id, versionId));
 
