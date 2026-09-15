@@ -53,7 +53,7 @@ function ToastRoot({ className, ...props }: ToastPrimitive.Root.Props) {
       ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200/50 dark:border-rose-800/40'
       : isWarning
         ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200/50 dark:border-amber-800/40'
-        : 'bg-blue-50 dark:bg-blue-950/40 border-blue-200/50 dark:border-blue-800/40'
+        : 'bg-primary/10 border-primary/20'
 
   const textClass = isSuccess
     ? 'text-emerald-900 dark:text-emerald-100'
@@ -61,7 +61,7 @@ function ToastRoot({ className, ...props }: ToastPrimitive.Root.Props) {
       ? 'text-rose-900 dark:text-rose-100'
       : isWarning
         ? 'text-amber-900 dark:text-amber-100'
-        : 'text-blue-900 dark:text-blue-100'
+        : 'text-foreground'
 
   return (
     <ToastPrimitive.Root
